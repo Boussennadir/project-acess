@@ -9,16 +9,90 @@ from datetime import date, datetime
 # ─────────────────────────────────────────────
 # CONSTANTS
 # ─────────────────────────────────────────────
-TYPE_LABELS = {
-    "STU": "Student",
-    "PHD": "PhD Student",
-    "FAC": "Faculty",
-    "STF": "Staff",
-    "TMP": "Temporary Staff",
+# ── CATEGORIES & SUB-CATEGORIES (matches the project document exactly)
+CATEGORIES = {
+    "STU": {
+        "label": "Students",
+        "subcategories": [
+            "Undergraduate",
+            "Continuing Education",
+            "PhD Candidate",
+            "International / Exchange",
+        ],
+    },
+    "FAC": {
+        "label": "Faculty",
+        "subcategories": [
+            "Tenured",
+            "Adjunct / Part-time",
+            "Visiting Researcher",
+        ],
+    },
+    "STF": {
+        "label": "Staff",
+        "subcategories": [
+            "Administrative",
+            "Technical",
+            "Temporary",
+        ],
+    },
+    "EXT": {
+        "label": "External",
+        "subcategories": [
+            "Contractor / Vendor",
+            "Alumni",
+        ],
+    },
 }
 
-ID_LIMITS = {"STU": 15000, "PHD": 1000, "FAC": 1200, "STF": 800, "TMP": 500}
-MIN_AGE   = {"STU": 16, "PHD": 23, "FAC": 25, "STF": 18, "TMP": 18}
+# Flat label map for display (type_code → category label)
+TYPE_LABELS = {
+    "STU": "Student",
+    "FAC": "Faculty",
+    "STF": "Staff",
+    "EXT": "External",
+}
+
+# Sub-category → ID prefix mapping
+# Each sub-category that needs its own prefix gets one here.
+# Others inherit their parent category prefix.
+SUBCAT_PREFIX = {
+    # Students
+    "Undergraduate":          "STU",
+    "Continuing Education":   "STU",
+    "PhD Candidate":          "PHD",
+    "International / Exchange": "INT",
+    # Faculty
+    "Tenured":                "FAC",
+    "Adjunct / Part-time":    "FAC",
+    "Visiting Researcher":    "VIS",
+    # Staff
+    "Administrative":         "STF",
+    "Technical":              "STF",
+    "Temporary":              "TMP",
+    # External
+    "Contractor / Vendor":    "EXT",
+    "Alumni":                 "ALU",
+}
+
+# ID limits per prefix
+ID_LIMITS = {
+    "STU": 14000,   # Undergraduate + Continuing Education
+    "PHD": 1000,    # PhD Candidates
+    "INT": 500,     # International/Exchange
+    "FAC": 1200,    # Tenured + Adjunct
+    "VIS": 50,      # Visiting Researchers
+    "STF": 700,     # Administrative + Technical
+    "TMP": 100,     # Temporary Staff
+    "EXT": 500,     # Contractors/Vendors
+    "ALU": 99999,   # Alumni (unlimited)
+}
+
+# Minimum age per category
+MIN_AGE = {"STU": 16, "FAC": 25, "STF": 18, "EXT": 18}
+
+# Sub-categories that need PhD-level age (23+)
+PHD_SUBCATS = {"PhD Candidate"}
 
 HIGH_SCHOOL_TYPES = [
     "Scientific", "Mathematics", "Technical",
@@ -26,15 +100,125 @@ HIGH_SCHOOL_TYPES = [
 ]
 HONORS_LIST       = ["None", "Passable", "Good", "Very Good", "Excellent"]
 ACADEMIC_STATUSES = ["Active", "Suspended", "Graduated", "Expelled"]
-FACULTIES         = [
-    "Faculty of Computer Science", "Faculty of Engineering",
-    "Faculty of Mathematics", "Faculty of Economics", "Faculty of Law",
-]
-DEPARTMENTS       = [
-    "Computer Science", "Software Engineering", "Cyber Security",
-    "Artificial Intelligence", "Data Science", "Networks",
-]
 GROUPS            = ["G1", "G2", "G3", "G4", "G5"]
+
+# ── FACULTY → DEPARTMENT → MAJORS (linked structure)
+FACULTY_CATALOG = {
+    "Faculty of Computer Science": {
+        "Computer Science": [
+            "Computer Science (General)",
+            "Theoretical Computer Science",
+            "Programming & Algorithms",
+        ],
+        "Software Engineering": [
+            "Software Engineering",
+            "Web Development",
+            "Mobile Development",
+        ],
+        "Cyber Security": [
+            "Cyber Security",
+            "Network Security",
+            "Digital Forensics",
+        ],
+        "Artificial Intelligence": [
+            "Artificial Intelligence",
+            "Machine Learning",
+            "Robotics",
+        ],
+        "Data Science": [
+            "Data Science",
+            "Big Data Analytics",
+            "Business Intelligence",
+        ],
+        "Networks & Telecommunications": [
+            "Computer Networks",
+            "Telecommunications",
+            "Internet of Things",
+        ],
+    },
+    "Faculty of Engineering": {
+        "Civil Engineering": [
+            "Civil Engineering",
+            "Structural Engineering",
+            "Urban Planning",
+        ],
+        "Mechanical Engineering": [
+            "Mechanical Engineering",
+            "Industrial Engineering",
+            "Thermal Engineering",
+        ],
+        "Electrical Engineering": [
+            "Electrical Engineering",
+            "Electronics",
+            "Automation & Control",
+        ],
+        "Chemical Engineering": [
+            "Chemical Engineering",
+            "Process Engineering",
+            "Environmental Engineering",
+        ],
+    },
+    "Faculty of Mathematics": {
+        "Pure Mathematics": [
+            "Pure Mathematics",
+            "Algebra & Analysis",
+            "Topology",
+        ],
+        "Applied Mathematics": [
+            "Applied Mathematics",
+            "Statistics",
+            "Operations Research",
+        ],
+        "Physics": [
+            "General Physics",
+            "Theoretical Physics",
+            "Astrophysics",
+        ],
+    },
+    "Faculty of Economics": {
+        "Economics": [
+            "General Economics",
+            "Microeconomics",
+            "Macroeconomics",
+        ],
+        "Management": [
+            "Business Management",
+            "Human Resources",
+            "Project Management",
+        ],
+        "Finance & Accounting": [
+            "Finance",
+            "Accounting",
+            "Banking & Insurance",
+        ],
+        "Commerce": [
+            "International Trade",
+            "Marketing",
+            "E-Commerce",
+        ],
+    },
+    "Faculty of Law": {
+        "Private Law": [
+            "Civil Law",
+            "Commercial Law",
+            "Family Law",
+        ],
+        "Public Law": [
+            "Constitutional Law",
+            "Administrative Law",
+            "International Public Law",
+        ],
+        "Criminal Law": [
+            "Criminal Law",
+            "Criminology",
+            "Forensic Science",
+        ],
+    },
+}
+
+# Flat lists derived from catalog (for backward compatibility)
+FACULTIES   = list(FACULTY_CATALOG.keys())
+DEPARTMENTS = sorted({dept for depts in FACULTY_CATALOG.values() for dept in depts})
 FACULTY_RANKS     = [
     "Professor", "Associate Professor", "Assistant Professor",
     "Lecturer", "Teaching Assistant",
@@ -94,15 +278,18 @@ def calc_age(dob_str):
     today = date.today()
     return today.year - born.year - ((today.month, today.day) < (born.month, born.day))
 
-def generate_id(conn, type_code):
+def generate_id(conn, sub_cat):
+    """Generate unique ID based on sub-category prefix."""
+    prefix = SUBCAT_PREFIX.get(sub_cat, "STU")
     row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM person WHERE type = ?", (type_code,)
+        "SELECT COUNT(*) as cnt FROM person WHERE id_prefix = ?", (prefix,)
     ).fetchone()
     count = row["cnt"] + 1
-    if count > ID_LIMITS[type_code]:
-        raise ValueError(f"ID limit reached for {type_code} (max: {ID_LIMITS[type_code]})")
+    limit = ID_LIMITS.get(prefix, 99999)
+    if count > limit:
+        raise ValueError(f"ID limit reached for {prefix} (max: {limit})")
     year = date.today().year
-    return f"{type_code}{year}{count:05d}"
+    return f"{prefix}{year}{count:05d}", prefix
 
 def log_history(conn, person_id, action, field=None, old_val=None, new_val=None, note=None):
     conn.execute(

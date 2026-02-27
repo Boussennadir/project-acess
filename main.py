@@ -35,16 +35,15 @@ def print_banner():
 def _show_quick_stats():
     conn  = get_connection()
     rows  = conn.execute(
-        "SELECT type, COUNT(*) as cnt FROM person GROUP BY type ORDER BY type"
+        "SELECT sub_category, COUNT(*) as cnt FROM person GROUP BY sub_category ORDER BY sub_category"
     ).fetchall()
     total = conn.execute("SELECT COUNT(*) as cnt FROM person").fetchone()["cnt"]
     conn.close()
 
-    labels = {"STU": "Students", "PHD": "PhD", "FAC": "Faculty", "STF": "Staff", "TMP": "Temporary"}
     print(f"\n  Registered identities: {total} total")
     for r in rows:
-        lbl = labels.get(r["type"], r["type"])
-        print(f"    • {lbl:<12}: {r['cnt']}")
+        lbl = r["sub_category"] or "Unknown"
+        print(f"    • {lbl:<28}: {r['cnt']}")
     print()
 
 

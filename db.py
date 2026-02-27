@@ -25,7 +25,9 @@ def init_db():
         CREATE TABLE IF NOT EXISTS person (
             id                INTEGER PRIMARY KEY AUTOINCREMENT,
             unique_identifier TEXT    NOT NULL UNIQUE,
-            type              TEXT    NOT NULL CHECK(type IN ('STU','PHD','FAC','STF','TMP')),
+            type              TEXT    NOT NULL CHECK(type IN ('STU','FAC','STF','EXT')),
+            sub_category      TEXT    NOT NULL DEFAULT '',
+            id_prefix         TEXT    NOT NULL DEFAULT 'STU',
             status            TEXT    NOT NULL DEFAULT 'Pending'
                                       CHECK(status IN ('Pending','Active','Suspended','Inactive','Archived')),
             first_name        TEXT    NOT NULL,
@@ -35,13 +37,13 @@ def init_db():
             nationality       TEXT    NOT NULL,
             gender            TEXT    NOT NULL CHECK(gender IN ('M','F')),
             email             TEXT    NOT NULL UNIQUE,
-            phone             TEXT    NOT NULL,
+            phone             TEXT    NOT NULL UNIQUE,
             created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
             updated_at        TEXT    NOT NULL DEFAULT (datetime('now'))
         )
     """)
 
-    # ── STUDENT (STU + PHD)
+    # ── STUDENT (all student sub-categories)
     c.execute("""
         CREATE TABLE IF NOT EXISTS student (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,7 +62,7 @@ def init_db():
         )
     """)
 
-    # ── FACULTY (FAC)
+    # ── FACULTY
     c.execute("""
         CREATE TABLE IF NOT EXISTS faculty (
             id                    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,7 +85,7 @@ def init_db():
         )
     """)
 
-    # ── STAFF (STF + TMP)
+    # ── STAFF
     c.execute("""
         CREATE TABLE IF NOT EXISTS staff (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
