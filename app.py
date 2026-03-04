@@ -29,59 +29,152 @@ from utils import (
     calc_age, generate_id, log_history, letters_only,
 )
 
-BG="#0d1117"; BG2="#161b22"; BG3="#21262d"; BORDER="#30363d"
-TEXT="#e6edf3"; TEXT2="#8b949e"; BLUE="#58a6ff"; BLUE_DIM="#1f6feb"
-GREEN="#3fb950"; ORANGE="#d29922"; RED="#f85149"; PURPLE="#bc8cff"
+BG="#0f0f0f"; BG2="#1a1a1a"; BG3="#252525"; BORDER="#3a3a3a"
+TEXT="#f5f5f5"; TEXT2="#a0a0a0"; ORANGE="#ff8c42"; ORANGE_DIM="#d96d2e"
+GREEN="#66bb6a"; RED="#e74c3c"; PURPLE="#9b59b6"
 
-STATUS_CLR={"Pending":ORANGE,"Active":GREEN,"Suspended":RED,"Inactive":TEXT2,"Archived":"#484f58"}
-CAT_CLR={"STU":BLUE,"FAC":GREEN,"STF":ORANGE,"EXT":PURPLE}
+STATUS_CLR = {"Pending": ORANGE, "Active": GREEN, "Suspended": RED, "Inactive": TEXT2, "Archived": "#505050"}
+CAT_CLR    = {"STU": ORANGE, "FAC": GREEN, "STF": ORANGE, "EXT": PURPLE}
 
 QSS=f"""
-* {{ font-family: 'Segoe UI', 'Inter', sans-serif; font-size: 13px; color: {TEXT}; }}
+* {{ font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; color: {TEXT}; }}
 QMainWindow, QWidget {{ background: {BG}; }}
 QDialog {{ background: {BG2}; }}
 QScrollArea {{ border: none; background: transparent; }}
-#sidebar {{ background: {BG2}; border-right: 1px solid {BORDER}; min-width: 230px; max-width: 230px; }}
-#logo {{ font-size: 15px; font-weight: 700; color: {BLUE}; padding: 0 20px; }}
-#uni  {{ font-size: 11px; color: {TEXT2}; padding: 0 20px 16px 20px; }}
-#nav  {{ background: transparent; color: {TEXT2}; border: none; border-radius: 8px; padding: 11px 20px; text-align: left; font-size: 13px; margin: 2px 10px; }}
-#nav:hover {{ background: {BG3}; color: {TEXT}; }}
-#nav_on {{ background: {BLUE_DIM}; color: {BLUE}; border: none; border-radius: 8px; padding: 11px 20px; text-align: left; font-size: 13px; font-weight: 700; margin: 2px 10px; }}
-#ver {{ color: #484f58; font-size: 11px; padding: 12px 0; }}
-#card {{ background: {BG2}; border: 1px solid {BORDER}; border-radius: 10px; padding: 20px; }}
-#card_blue  {{ background: {BG2}; border: 1px solid {BLUE_DIM}; border-radius: 10px; padding: 20px; }}
-#card_green {{ background: {BG2}; border: 1px solid #238636; border-radius: 10px; padding: 20px; }}
-QLineEdit, QComboBox, QDateEdit {{ background: {BG3}; border: 1px solid {BORDER}; border-radius: 6px; padding: 7px 10px; color: {TEXT}; min-height: 22px; }}
-QLineEdit:focus, QComboBox:focus, QDateEdit:focus {{ border: 1px solid {BLUE}; }}
-QLineEdit[err="1"] {{ border: 1px solid {RED}; }}
+
+#sidebar {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #1a1a1a, stop:1 #0f0f0f);
+    border-right: 2px solid {ORANGE_DIM};
+    min-width: 230px; max-width: 230px;
+}}
+#logo {{
+    font-size: 16px; font-weight: 700; color: {ORANGE};
+    padding: 0 20px; letter-spacing: 1px;
+}}
+#uni  {{ font-size: 11px; color: {TEXT2}; padding: 0 20px 16px 20px; letter-spacing: 2px; text-transform: uppercase; }}
+#nav  {{
+    background: transparent; color: {TEXT2}; border: none;
+    border-left: 3px solid transparent;
+    border-radius: 0px; padding: 12px 20px;
+    text-align: left; font-size: 13px; margin: 1px 0px;
+}}
+#nav:hover  {{ background: rgba(255,140,66,0.08); color: {ORANGE}; border-left: 3px solid {ORANGE_DIM}; }}
+#nav_on {{
+    background: rgba(255,140,66,0.12); color: {ORANGE};
+    border: none; border-left: 3px solid {ORANGE};
+    border-radius: 0px; padding: 12px 20px;
+    text-align: left; font-size: 13px; font-weight: 700; margin: 1px 0px;
+}}
+#ver {{ color: #404040; font-size: 11px; padding: 12px 0; letter-spacing: 1px; }}
+
+#card {{
+    background: {BG2};
+    border: 1px solid {BORDER};
+    border-top: 2px solid {ORANGE_DIM};
+    border-radius: 4px; padding: 20px;
+}}
+#card_blue  {{
+    background: {BG2};
+    border: 1px solid {ORANGE_DIM};
+    border-top: 2px solid {ORANGE};
+    border-radius: 4px; padding: 20px;
+}}
+#card_green {{
+    background: {BG2};
+    border: 1px solid #558b4a;
+    border-top: 2px solid {GREEN};
+    border-radius: 4px; padding: 20px;
+}}
+
+QLineEdit, QComboBox, QDateEdit {{
+    background: {BG3};
+    border: 1px solid {BORDER};
+    border-bottom: 2px solid {BORDER};
+    border-radius: 3px;
+    padding: 7px 10px; color: {TEXT}; min-height: 22px;
+    font-family: 'Consolas', monospace;
+}}
+QLineEdit:focus, QComboBox:focus, QDateEdit:focus {{
+    border-bottom: 2px solid {ORANGE};
+    background: #2a2520;
+}}
+QLineEdit[err="1"] {{ border-bottom: 2px solid {RED}; background: #2a1515; }}
 QComboBox::drop-down {{ border: none; padding-right: 8px; }}
-QComboBox QAbstractItemView {{ background: {BG3}; border: 1px solid {BORDER}; color: {TEXT}; selection-background-color: {BLUE_DIM}; }}
-#h1   {{ font-size: 20px; font-weight: 700; color: {TEXT}; }}
-#sub  {{ color: {TEXT2}; font-size: 12px; }}
-#flbl {{ color: {TEXT2}; font-size: 12px; font-weight: 600; margin-bottom: 2px; }}
+QComboBox QAbstractItemView {{
+    background: {BG3}; border: 1px solid {BORDER};
+    color: {TEXT}; selection-background-color: {ORANGE_DIM};
+    outline: none;
+}}
+
+#h1   {{ font-size: 22px; font-weight: 700; color: {TEXT}; letter-spacing: 1px; }}
+#sub  {{ color: {TEXT2}; font-size: 12px; letter-spacing: 1px; }}
+#flbl {{ color: {ORANGE}; font-size: 11px; font-weight: 700; margin-bottom: 2px; letter-spacing: 1px; text-transform: uppercase; }}
 #err  {{ color: {RED}; font-size: 11px; }}
-#btn_p {{ background: {BLUE_DIM}; color: white; border: none; border-radius: 7px; padding: 9px 22px; font-weight: 700; min-width: 110px; }}
-#btn_p:hover {{ background: {BLUE}; }}
-#btn_p:disabled {{ background: {BG3}; color: {TEXT2}; }}
-#btn_s {{ background: {BG3}; color: {TEXT}; border: 1px solid {BORDER}; border-radius: 7px; padding: 9px 22px; min-width: 90px; }}
-#btn_s:hover {{ background: {BORDER}; }}
-#btn_g {{ background: #1c6e2f; color: white; border: none; border-radius: 7px; padding: 9px 22px; font-weight: 700; }}
-#btn_g:hover {{ background: {GREEN}; }}
-QTableWidget {{ background: {BG2}; border: 1px solid {BORDER}; border-radius: 8px; gridline-color: {BORDER}; color: {TEXT}; alternate-background-color: {BG3}; }}
-QTableWidget::item {{ padding: 8px 12px; border-bottom: 1px solid {BORDER}; }}
-QTableWidget::item:selected {{ background: {BLUE_DIM}; color: white; }}
-QHeaderView::section {{ background: {BG3}; color: {TEXT2}; font-size: 12px; font-weight: 600; padding: 10px 12px; border: none; border-bottom: 1px solid {BORDER}; }}
-QTabWidget::pane {{ border: 1px solid {BORDER}; border-radius: 8px; background: {BG2}; top: -1px; }}
-QTabBar::tab {{ background: {BG3}; color: {TEXT2}; padding: 8px 20px; border-radius: 6px 6px 0 0; margin-right: 2px; }}
-QTabBar::tab:selected {{ background: {BLUE_DIM}; color: {BLUE}; }}
-QGroupBox {{ border: 1px solid {BORDER}; border-radius: 8px; margin-top: 10px; padding-top: 6px; color: {TEXT2}; font-size: 11px; font-weight: 600; }}
+
+#btn_p {{
+    background: transparent; color: {ORANGE};
+    border: 1px solid {ORANGE}; border-radius: 3px;
+    padding: 9px 22px; font-weight: 700; min-width: 110px;
+    letter-spacing: 1px;
+}}
+#btn_p:hover   {{ background: {ORANGE}; color: {BG}; }}
+#btn_p:disabled {{ border-color: {BORDER}; color: {TEXT2}; }}
+#btn_s {{
+    background: transparent; color: {TEXT2};
+    border: 1px solid {BORDER}; border-radius: 3px;
+    padding: 9px 22px; min-width: 90px;
+}}
+#btn_s:hover {{ border-color: {TEXT2}; color: {TEXT}; }}
+#btn_g {{
+    background: transparent; color: {GREEN};
+    border: 1px solid {GREEN}; border-radius: 3px;
+    padding: 9px 22px; font-weight: 700;
+}}
+#btn_g:hover {{ background: {GREEN}; color: {BG}; }}
+
+QTableWidget {{
+    background: {BG2}; border: 1px solid {BORDER};
+    border-radius: 4px; gridline-color: {BORDER};
+    color: {TEXT}; alternate-background-color: {BG3};
+}}
+QTableWidget::item         {{ padding: 9px 12px; border-bottom: 1px solid {BORDER}; }}
+QTableWidget::item:selected {{ background: rgba(255,140,66,0.15); color: {ORANGE}; }}
+QHeaderView::section {{
+    background: {BG}; color: {ORANGE}; font-size: 11px; font-weight: 700;
+    padding: 10px 12px; border: none; border-bottom: 2px solid {ORANGE_DIM};
+    letter-spacing: 2px; text-transform: uppercase;
+}}
+
+QTabWidget::pane  {{ border: 1px solid {BORDER}; border-radius: 4px; background: {BG2}; top: -1px; }}
+QTabBar::tab      {{
+    background: transparent; color: {TEXT2};
+    padding: 9px 22px; border-bottom: 2px solid transparent;
+    margin-right: 4px; border-radius: 0;
+}}
+QTabBar::tab:selected {{ color: {ORANGE}; border-bottom: 2px solid {ORANGE}; background: transparent; }}
+QTabBar::tab:hover    {{ color: {TEXT}; background: rgba(0,201,177,0.06); }}
+
+QGroupBox {{
+    border: 1px solid {BORDER}; border-radius: 4px;
+    margin-top: 10px; padding-top: 6px;
+    color: {ORANGE}; font-size: 11px; font-weight: 700; letter-spacing: 1px;
+}}
 QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 5px; }}
+
 #sep {{ background: {BORDER}; max-height: 1px; margin: 6px 0; }}
-QScrollBar:vertical {{ background: {BG}; width: 7px; border-radius: 4px; }}
-QScrollBar::handle:vertical {{ background: {BORDER}; border-radius: 4px; min-height: 20px; }}
+
+QScrollBar:vertical   {{ background: {BG}; width: 5px; border-radius: 3px; }}
+QScrollBar::handle:vertical {{ background: {ORANGE_DIM}; border-radius: 3px; min-height: 20px; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+
 QMessageBox {{ background: {BG2}; }}
-QMessageBox QPushButton {{ background: {BLUE_DIM}; color: white; border: none; border-radius: 6px; padding: 7px 18px; min-width: 70px; }}
+QMessageBox QPushButton {{
+    background: transparent; color: {ORANGE};
+    border: 1px solid {ORANGE}; border-radius: 3px;
+    padding: 7px 18px; min-width: 70px;
+}}
+QMessageBox QPushButton:hover {{ background: {ORANGE}; color: {BG}; }}
 """
 
 def sep():
@@ -98,7 +191,7 @@ def fw(label,widget,err=None):
 def mkbtn(text,obj="btn_p"):
     b=QPushButton(text); b.setObjectName(obj); b.setCursor(Qt.CursorShape.PointingHandCursor); return b
 def sh(txt,color=None):
-    c=color or BLUE; l=QLabel(txt); l.setStyleSheet(f"font-size:14px;font-weight:700;color:{c};padding:6px 0 2px 0;"); return l
+    c=color or ORANGE; l=QLabel(txt); l.setStyleSheet(f"font-size:14px;font-weight:700;color:{c};padding:6px 0 2px 0;"); return l
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -218,7 +311,7 @@ class CreatePage(QWidget):
     def _step0(self):
         self._clr()
         card=QWidget(); card.setObjectName("card"); cv=QVBoxLayout(card); cv.setSpacing(14)
-        cv.addWidget(QLabel("Step 1 — Choose Category and Sub-category",styleSheet=f"font-weight:700;font-size:14px;color:{BLUE};"))
+        cv.addWidget(QLabel("Step 1 — Choose Category and Sub-category",styleSheet=f"font-weight:700;font-size:14px;color:{ORANGE};"))
         row=QHBoxLayout(); row.setSpacing(16)
         g1=QGroupBox("Category"); gl1=QVBoxLayout(g1)
         self._cc=QComboBox()
@@ -244,7 +337,7 @@ class CreatePage(QWidget):
         self._clr()
         back=mkbtn("← Back","btn_s"); back.clicked.connect(self._step0)
         crumb=QLabel(f"  {CATEGORIES[self._cat]['label']}  ›  {self._sub}")
-        crumb.setStyleSheet(f"color:{BLUE};font-size:12px;")
+        crumb.setStyleSheet(f"color:{ORANGE};font-size:12px;")
         top=QHBoxLayout(); top.addWidget(back); top.addWidget(crumb); top.addStretch()
         tw=QWidget(); tw.setLayout(top); self._vl.addWidget(tw)
         # common
@@ -433,7 +526,7 @@ class CreatePage(QWidget):
         dv.addWidget(QLabel("✓",styleSheet=f"font-size:44px;color:{GREEN};",alignment=Qt.AlignmentFlag.AlignCenter))
         dv.addWidget(QLabel("<b>Identity Created Successfully</b>",alignment=Qt.AlignmentFlag.AlignCenter))
         dv.addWidget(QLabel(f"Name: <b>{fn} {ln}</b>",alignment=Qt.AlignmentFlag.AlignCenter))
-        dv.addWidget(QLabel(f"<span style='font-size:16px;font-weight:700;color:{BLUE};'>{new_id}</span>",alignment=Qt.AlignmentFlag.AlignCenter))
+        dv.addWidget(QLabel(f"<span style='font-size:16px;font-weight:700;color:{ORANGE};'>{new_id}</span>",alignment=Qt.AlignmentFlag.AlignCenter))
         dv.addWidget(QLabel(f"Status: <b style='color:{ORANGE};'>Pending</b>",alignment=Qt.AlignmentFlag.AlignCenter))
         ok=mkbtn("OK"); ok.clicked.connect(d.accept); dv.addWidget(ok,alignment=Qt.AlignmentFlag.AlignCenter)
         d.exec(); self.mw.refresh_all(); self._step0()
@@ -493,7 +586,7 @@ class PersonDetailDlg(QDialog):
         self.setWindowTitle(f"Identity — {person['unique_identifier']}"); self.setMinimumSize(720,560)
         vl=QVBoxLayout(self); vl.setContentsMargins(24,24,24,24); vl.setSpacing(14)
         hl=QHBoxLayout()
-        il=QLabel(person["unique_identifier"]); il.setStyleSheet(f"font-size:18px;font-weight:700;color:{BLUE};")
+        il=QLabel(person["unique_identifier"]); il.setStyleSheet(f"font-size:18px;font-weight:700;color:{ORANGE};")
         nl=QLabel(f"  {person['first_name']} {person['last_name']}"); nl.setStyleSheet(f"font-size:15px;")
         sl=QLabel(f"  {person['status']}"); sl.setStyleSheet(f"color:{STATUS_CLR.get(person['status'],TEXT)};font-weight:700;")
         hl.addWidget(il); hl.addWidget(nl); hl.addWidget(sl); hl.addStretch(); vl.addLayout(hl); vl.addWidget(sep())
@@ -796,7 +889,7 @@ class PromotePage(QWidget):
         vl=QVBoxLayout(self); vl.setContentsMargins(32,28,32,28); vl.setSpacing(14)
         vl.addWidget(QLabel("Promote Student → Faculty",objectName="h1"))
         vl.addWidget(QLabel("The student identity is archived. A new Faculty identity is created with the same personal data.",objectName="sub"))
-        self._step_lbl=QLabel("Step 1 — Find the student"); self._step_lbl.setStyleSheet(f"color:{BLUE};font-size:13px;font-weight:700;padding:4px 0;")
+        self._step_lbl=QLabel("Step 1 — Find the student"); self._step_lbl.setStyleSheet(f"color:{ORANGE};font-size:13px;font-weight:700;padding:4px 0;")
         vl.addWidget(self._step_lbl); vl.addWidget(sep())
         # search
         self._sp=QWidget(); sv=QVBoxLayout(self._sp); sv.setContentsMargins(0,0,0,0); sv.setSpacing(10)
@@ -811,7 +904,7 @@ class PromotePage(QWidget):
         # student summary card
         self._sc=QWidget(); self._sc.setObjectName("card_blue"); self._sc.hide()
         sk=QVBoxLayout(self._sc); sk.setSpacing(6)
-        self._sn=QLabel(""); self._sn.setStyleSheet(f"font-size:14px;font-weight:700;color:{BLUE};")
+        self._sn=QLabel(""); self._sn.setStyleSheet(f"font-size:14px;font-weight:700;color:{ORANGE};")
         self._sd=QLabel(""); self._sd.setStyleSheet(f"color:{TEXT2};font-size:12px;")
         sk.addWidget(self._sn); sk.addWidget(self._sd); vl.addWidget(self._sc)
         # faculty form (scrollable)
@@ -954,7 +1047,7 @@ class PromotePage(QWidget):
         dv.addWidget(QLabel("🎓",styleSheet="font-size:48px;",alignment=Qt.AlignmentFlag.AlignCenter))
         dv.addWidget(QLabel("<b>Promotion Completed Successfully</b>",alignment=Qt.AlignmentFlag.AlignCenter))
         dv.addWidget(sep())
-        for lbl,val,col in [("Person",f"{stu['first_name']} {stu['last_name']}",TEXT),("Old Student ID",stu["unique_identifier"],STATUS_CLR["Archived"]),("Old Status","Archived",STATUS_CLR["Archived"]),("New Faculty ID",new_id,BLUE),("New Status","Pending",ORANGE),("Sub-category",sub_cat,GREEN)]:
+        for lbl,val,col in [("Person",f"{stu['first_name']} {stu['last_name']}",TEXT),("Old Student ID",stu["unique_identifier"],STATUS_CLR["Archived"]),("Old Status","Archived",STATUS_CLR["Archived"]),("New Faculty ID",new_id,ORANGE),("New Status","Pending",ORANGE),("Sub-category",sub_cat,GREEN)]:
             rw=QWidget(); rl=QHBoxLayout(rw); rl.setContentsMargins(0,2,0,2)
             rl.addWidget(QLabel(lbl+":",styleSheet=f"color:{TEXT2};min-width:140px;"))
             rl.addWidget(QLabel(val,styleSheet=f"color:{col};font-weight:700;")); rl.addStretch()
