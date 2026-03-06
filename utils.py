@@ -244,7 +244,7 @@ STATUS_TRANSITIONS = {
     "Pending":   ["Active"],
     "Active":    ["Suspended", "Inactive"],
     "Suspended": ["Active"],
-    "Inactive":  ["Archived"],
+    "Inactive":  ["Active", "Archived"],
     "Archived":  [],
 }
 

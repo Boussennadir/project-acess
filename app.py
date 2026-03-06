@@ -559,8 +559,20 @@ class SearchPage(QWidget):
     def _load(self):
         q=self.q.text().strip(); cat=self.fc.currentData(); sta=self.fs.currentText()
         sql="SELECT * FROM person WHERE 1=1"; p=[]
+        
+        # Support searching by full name (e.g., "bob nad" or "nad bob")
         if q:
-            sql+=" AND (first_name LIKE ? OR last_name LIKE ? OR unique_identifier LIKE ? OR email LIKE ? OR phone LIKE ?)"; p+=[f"%{q}%"]*5
+            words = q.split()
+            if len(words) >= 2:
+                # Multiple words - search for name combinations in any order
+                word1, word2 = words[0], words[1]
+                sql+=" AND (unique_identifier LIKE ? OR email LIKE ? OR phone LIKE ? OR ((first_name LIKE ? AND last_name LIKE ?) OR (first_name LIKE ? AND last_name LIKE ?)) OR first_name LIKE ? OR last_name LIKE ?)"
+                p+=[f"%{q}%", f"%{q}%", f"%{q}%", f"%{word1}%", f"%{word2}%", f"%{word2}%", f"%{word1}%", f"%{q}%", f"%{q}%"]
+            else:
+                # Single word search
+                sql+=" AND (first_name LIKE ? OR last_name LIKE ? OR unique_identifier LIKE ? OR email LIKE ? OR phone LIKE ?)"
+                p+=[f"%{q}%"]*5
+        
         if cat: sql+=" AND type=?"; p.append(cat)
         if sta!="All Statuses": sql+=" AND status=?"; p.append(sta)
         sql+=" ORDER BY created_at DESC"
@@ -682,7 +694,20 @@ class UpdatePage(QWidget):
         q=self.q.text().strip()
         if not q: self.rtbl.setRowCount(0); self._ep.hide(); return
         conn=get_connection()
-        rows=conn.execute("SELECT * FROM person WHERE first_name LIKE ? OR last_name LIKE ? OR unique_identifier LIKE ? ORDER BY last_name",(f"%{q}%",)*3).fetchall()
+        
+        # Support searching by full name (e.g., "bob nad" or "nad bob")
+        words = q.split()
+        if len(words) >= 2:
+            # Multiple words - search for name combinations in any order
+            word1, word2 = words[0], words[1]
+            rows=conn.execute("""SELECT * FROM person WHERE 
+                unique_identifier LIKE ? OR 
+                ((first_name LIKE ? AND last_name LIKE ?) OR (first_name LIKE ? AND last_name LIKE ?)) OR 
+                first_name LIKE ? OR last_name LIKE ?
+                ORDER BY last_name""",(f"%{q}%", f"%{word1}%", f"%{word2}%", f"%{word2}%", f"%{word1}%", f"%{q}%", f"%{q}%")).fetchall()
+        else:
+            rows=conn.execute("SELECT * FROM person WHERE first_name LIKE ? OR last_name LIKE ? OR unique_identifier LIKE ? ORDER BY last_name",(f"%{q}%", f"%{q}%", f"%{q}%")).fetchall()
+        
         conn.close(); self.rtbl.setRowCount(len(rows))
         for r,row in enumerate(rows):
             for c,v in enumerate([row["unique_identifier"],f"{row['first_name']} {row['last_name']}",TYPE_LABELS.get(row["type"],row["type"]),row["sub_category"],row["status"]]):
@@ -733,12 +758,11 @@ class UpdatePage(QWidget):
         conn=get_connection(); s=conn.execute("SELECT * FROM student WHERE person_id=?",(p["id"],)).fetchone(); conn.close()
         if not s: return QLabel("No student data.")
         w=QWidget(); g=QGridLayout(w); g.setSpacing(10); g.setContentsMargins(12,12,12,12)
-        g.addWidget(self._mec("Academic Status","academic_status",ACADEMIC_STATUSES,s["academic_status"]),0,0)
-        g.addWidget(self._mec("HS Honors","hs_honors",HONORS_LIST,s["high_school_honors"]),0,1)
-        g.addWidget(self._mec("Faculty","fac",FACULTIES,s["faculty"]),1,0)
-        g.addWidget(self._mec("Department","dept_stu",DEPARTMENTS,s["department"]),1,1)
-        g.addWidget(self._mec("Group","group",GROUPS,s["group_name"] or GROUPS[0]),2,0)
-        g.addWidget(self._mec("Scholarship","scholarship",["yes","no"],s["scholarship"]),2,1)
+        g.addWidget(self._mec("HS Honors","hs_honors",HONORS_LIST,s["high_school_honors"]),0,0)
+        g.addWidget(self._mec("Faculty","fac",FACULTIES,s["faculty"]),0,1)
+        g.addWidget(self._mec("Department","dept_stu",DEPARTMENTS,s["department"]),1,0)
+        g.addWidget(self._mec("Group","group",GROUPS,s["group_name"] or GROUPS[0]),1,1)
+        g.addWidget(self._mec("Scholarship","scholarship",["yes","no"],s["scholarship"]),2,0)
         return w
 
     def _tab_fac(self,p):
@@ -777,7 +801,7 @@ class UpdatePage(QWidget):
         for k in self._ee: self._ee[k].setText("")
         fmap={"first_name":("person","first_name"),"last_name":("person","last_name"),
               "place_of_birth":("person","place_of_birth"),"nationality":("person","nationality"),"phone":("person","phone"),
-              "academic_status":("student","academic_status"),"hs_honors":("student","high_school_honors"),
+              "hs_honors":("student","high_school_honors"),
               "fac":("student","faculty"),"dept_stu":("student","department"),"group":("student","group_name"),"scholarship":("student","scholarship"),
               "rank":("faculty","rank"),"emp_cat":("faculty","employment_category"),"primary_dept":("faculty","primary_department"),
               "secondary":("faculty","secondary_departments"),"research":("faculty","research_areas"),
@@ -839,7 +863,20 @@ class StatusPage(QWidget):
         q=self.q.text().strip()
         if not q: self.tbl.setRowCount(0); self._panel.hide(); return
         conn=get_connection()
-        rows=conn.execute("SELECT * FROM person WHERE first_name LIKE ? OR last_name LIKE ? OR unique_identifier LIKE ? ORDER BY last_name",(f"%{q}%",)*3).fetchall()
+        
+        # Support searching by full name (e.g., "bob nad" or "nad bob")
+        words = q.split()
+        if len(words) >= 2:
+            # Multiple words - search for name combinations in any order
+            word1, word2 = words[0], words[1]
+            rows=conn.execute("""SELECT * FROM person WHERE 
+                unique_identifier LIKE ? OR 
+                ((first_name LIKE ? AND last_name LIKE ?) OR (first_name LIKE ? AND last_name LIKE ?)) OR 
+                first_name LIKE ? OR last_name LIKE ?
+                ORDER BY last_name""",(f"%{q}%", f"%{word1}%", f"%{word2}%", f"%{word2}%", f"%{word1}%", f"%{q}%", f"%{q}%")).fetchall()
+        else:
+            rows=conn.execute("SELECT * FROM person WHERE first_name LIKE ? OR last_name LIKE ? OR unique_identifier LIKE ? ORDER BY last_name",(f"%{q}%", f"%{q}%", f"%{q}%")).fetchall()
+        
         conn.close(); self.tbl.setRowCount(len(rows))
         for r,row in enumerate(rows):
             for c,v in enumerate([row["unique_identifier"],f"{row['first_name']} {row['last_name']}",TYPE_LABELS.get(row["type"],row["type"]),row["sub_category"],row["status"]]):
@@ -931,7 +968,20 @@ class PromotePage(QWidget):
         q=self.q.text().strip()
         if not q: self.tbl.setRowCount(0); self._sc.hide(); self._fp.hide(); return
         conn=get_connection()
-        rows=conn.execute("SELECT * FROM person WHERE type='STU' AND status NOT IN ('Archived') AND (first_name LIKE ? OR last_name LIKE ? OR unique_identifier LIKE ?) ORDER BY last_name",(f"%{q}%",)*3).fetchall()
+        
+        # Support searching by full name (e.g., "bob nad" or "nad bob")
+        words = q.split()
+        if len(words) >= 2:
+            # Multiple words - search for name combinations in any order
+            word1, word2 = words[0], words[1]
+            rows=conn.execute("""SELECT * FROM person WHERE type='STU' AND status NOT IN ('Archived') AND (
+                unique_identifier LIKE ? OR 
+                ((first_name LIKE ? AND last_name LIKE ?) OR (first_name LIKE ? AND last_name LIKE ?)) OR 
+                first_name LIKE ? OR last_name LIKE ?)
+                ORDER BY last_name""",(f"%{q}%", f"%{word1}%", f"%{word2}%", f"%{word2}%", f"%{word1}%", f"%{q}%", f"%{q}%")).fetchall()
+        else:
+            rows=conn.execute("SELECT * FROM person WHERE type='STU' AND status NOT IN ('Archived') AND (first_name LIKE ? OR last_name LIKE ? OR unique_identifier LIKE ?) ORDER BY last_name",(f"%{q}%", f"%{q}%", f"%{q}%")).fetchall()
+        
         conn.close(); self.tbl.setRowCount(len(rows))
         for r,row in enumerate(rows):
             for c,v in enumerate([row["unique_identifier"],f"{row['first_name']} {row['last_name']}",row["sub_category"],row["status"],row["date_of_birth"]]):
