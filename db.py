@@ -5,6 +5,7 @@
 
 import sqlite3
 import os
+from auth import hash_password
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "university.db")
 
@@ -111,6 +112,61 @@ def init_db():
             note         TEXT
         )
     """)
+
+    # ── AUTH USERS
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS auth_user (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_id         INTEGER REFERENCES person(id) ON DELETE CASCADE,
+            username          TEXT    NOT NULL UNIQUE,
+            password_hash     TEXT    NOT NULL,
+            auth_level        TEXT    NOT NULL DEFAULT 'L1' CHECK(auth_level IN ('L1','L2','L3','L4')),
+            role              TEXT    NOT NULL DEFAULT 'user' CHECK(role IN ('admin','user')),
+            failed_attempts   INTEGER NOT NULL DEFAULT 0,
+            locked_until      TEXT,
+            first_login       INTEGER NOT NULL DEFAULT 1 CHECK(first_login IN (0,1)),
+            password_changed_at TEXT,
+            created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS auth_event (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_time      TEXT NOT NULL DEFAULT (datetime('now')),
+            username        TEXT NOT NULL,
+            success         INTEGER NOT NULL CHECK(success IN (0,1)),
+            ip_address      TEXT,
+            mfa_used        INTEGER NOT NULL DEFAULT 0 CHECK(mfa_used IN (0,1)),
+            failure_reason  TEXT,
+            session_id      TEXT
+        )
+    """)
+
+    # Seed admin account: username=admin, password=admin
+    admin = c.execute("SELECT id FROM auth_user WHERE username='admin'").fetchone()
+    if not admin:
+        c.execute(
+            """
+            INSERT INTO auth_user (person_id, username, password_hash, auth_level, role, first_login, password_changed_at)
+            VALUES (NULL, 'admin', ?, 'L4', 'admin', 0, datetime('now'))
+            """,
+            (hash_password("admin"),),
+        )
+
+    # Ensure every existing person has a user account (username = identity id)
+    people = c.execute("SELECT id, unique_identifier, date_of_birth FROM person").fetchall()
+    for person in people:
+        exists = c.execute("SELECT id FROM auth_user WHERE username=?", (person["unique_identifier"],)).fetchone()
+        if not exists:
+            temp_pw = person["date_of_birth"].replace("-", "")
+            c.execute(
+                """
+                INSERT INTO auth_user (person_id, username, password_hash, auth_level, role, first_login)
+                VALUES (?, ?, ?, 'L1', 'user', 1)
+                """,
+                (person["id"], person["unique_identifier"], hash_password(temp_pw)),
+            )
 
     conn.commit()
     conn.close()
