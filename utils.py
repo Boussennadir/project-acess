@@ -16,16 +16,16 @@ CATEGORIES = {
         "subcategories": [
             "Undergraduate",
             "Continuing Education",
-            "PhD Candidate",
-            "International / Exchange",
+            "PhD Candidates",
+            "International/Exchange",
         ],
     },
     "FAC": {
         "label": "Faculty",
         "subcategories": [
             "Tenured",
-            "Adjunct / Part-time",
-            "Visiting Researcher",
+            "Adjunct/Part-time",
+            "Visiting Researchers",
         ],
     },
     "STF": {
@@ -39,7 +39,7 @@ CATEGORIES = {
     "EXT": {
         "label": "External",
         "subcategories": [
-            "Contractor / Vendor",
+            "Contractors/Vendors",
             "Alumni",
         ],
     },
@@ -60,28 +60,26 @@ SUBCAT_PREFIX = {
     # Students
     "Undergraduate":          "STU",
     "Continuing Education":   "STU",
-    "PhD Candidate":          "PHD",
-    "International / Exchange": "INT",
+    "PhD Candidates":         "PHD",
+    "International/Exchange": "STU",
     # Faculty
     "Tenured":                "FAC",
-    "Adjunct / Part-time":    "FAC",
-    "Visiting Researcher":    "VIS",
+    "Adjunct/Part-time":      "FAC",
+    "Visiting Researchers":   "FAC",
     # Staff
     "Administrative":         "STF",
     "Technical":              "STF",
     "Temporary":              "TMP",
     # External
-    "Contractor / Vendor":    "EXT",
-    "Alumni":                 "ALU",
+    "Contractors/Vendors":    "EXT",
+    "Alumni":                 "EXT",
 }
 
 # ID limits per prefix
 ID_LIMITS = {
-    "STU": 14000,   # Undergraduate + Continuing Education
+    "STU": 14000,   # Undergraduate + Continuing Education + International
     "PHD": 1000,    # PhD Candidates
-    "INT": 500,     # International/Exchange
-    "FAC": 1200,    # Tenured + Adjunct
-    "VIS": 50,      # Visiting Researchers
+    "FAC": 1200,    # All Faculty
     "STF": 700,     # Administrative + Technical
     "TMP": 100,     # Temporary Staff
     "EXT": 500,     # Contractors/Vendors
@@ -90,14 +88,6 @@ ID_LIMITS = {
 
 # ─────────────────────────────────────────────────────────────
 # MINIMUM AGE — one value per CATEGORY (applies to all sub-cats)
-# ┌──────────────┬─────┬──────────────────────────────────────────────────────┐
-# │ Category     │ Age │ Reason                                               │
-# ├──────────────┼─────┼──────────────────────────────────────────────────────┤
-# │ STU Students │  16 │ Minimum enrolment age after high school (baccalauréat)│
-# │ FAC Faculty  │  25 │ Needs at least a Master's degree (5 years of study)  │
-# │ STF Staff    │  18 │ Legal working age in Algeria                         │
-# │ EXT External │  18 │ Legal adult age for contractors/alumni               │
-# └──────────────┴─────┴──────────────────────────────────────────────────────┘
 MIN_AGE = {
     "STU": 16,
     "FAC": 25,
@@ -105,7 +95,7 @@ MIN_AGE = {
     "EXT": 18,
 }
 
-PHD_SUBCATS = {"PhD Candidate"}
+PHD_SUBCATS = {"PhD Candidates"}
 
 HIGH_SCHOOL_TYPES = [
     "Scientific", "Mathematics", "Technical",
@@ -244,7 +234,7 @@ STATUS_TRANSITIONS = {
     "Pending":   ["Active"],
     "Active":    ["Suspended", "Inactive"],
     "Suspended": ["Active"],
-    "Inactive":  ["Active", "Archived"],
+    "Inactive":  ["Archived"],
     "Archived":  [],
 }
 
@@ -322,137 +312,3 @@ def letters_only(v):
     if any(c.isdigit() for c in v):
         return "This field must contain letters only, no numbers."
     return None
-
-# ─────────────────────────────────────────────
-# INPUT HELPERS
-# ─────────────────────────────────────────────
-def ask(prompt, validate=None, allow_empty=False):
-    """Ask for text input with optional validation. Returns stripped string."""
-    while True:
-        raw = input(f"  {prompt}: ").strip()
-        if not raw and not allow_empty:
-            print("  ✗ This field is required.")
-            continue
-        if validate:
-            err = validate(raw)
-            if err:
-                print(f"  ✗ {err}")
-                continue
-        return raw
-
-def ask_optional(prompt):
-    """Ask for optional input. Returns value or None."""
-    raw = input(f"  {prompt} (press Enter to skip): ").strip()
-    return raw if raw else None
-
-def choose(title, items):
-    """Show numbered list, return chosen item. No skip allowed."""
-    print(f"\n  {title}:")
-    for i, item in enumerate(items, 1):
-        print(f"    {i:2}. {item}")
-    while True:
-        raw = input("  Choice: ").strip()
-        try:
-            idx = int(raw) - 1
-            if 0 <= idx < len(items):
-                print(f"  ✓ {items[idx]}")
-                return items[idx]
-        except ValueError:
-            pass
-        print("  ✗ Invalid selection.")
-
-def choose_optional(title, items):
-    """Show numbered list with skip option. Returns item or None."""
-    print(f"\n  {title}:")
-    for i, item in enumerate(items, 1):
-        print(f"    {i:2}. {item}")
-    print(f"    {'0':>3}. Skip")
-    while True:
-        raw = input("  Choice: ").strip()
-        if raw == "0":
-            return None
-        try:
-            idx = int(raw) - 1
-            if 0 <= idx < len(items):
-                return items[idx]
-        except ValueError:
-            pass
-        print("  ✗ Invalid selection.")
-
-def yes_no(prompt):
-    """Ask yes/no question. Returns bool."""
-    while True:
-        raw = input(f"  {prompt} (yes/no): ").strip().lower()
-        if raw in ("yes", "y"):
-            return True
-        if raw in ("no", "n"):
-            return False
-        print("  ✗ Please type yes or no.")
-
-def ask_year(prompt, min_year=None, max_year=None):
-    """Ask for a 4-digit year within optional bounds."""
-    while True:
-        raw = input(f"  {prompt} (YYYY): ").strip()
-        if not raw.isdigit() or len(raw) != 4:
-            print("  ✗ Must be a 4-digit year.")
-            continue
-        y = int(raw)
-        if min_year and y < min_year:
-            print(f"  ✗ Year must be at least {min_year}.")
-            continue
-        if max_year and y > max_year:
-            print(f"  ✗ Year cannot exceed {max_year}.")
-            continue
-        return y
-
-def ask_date(prompt, min_date=None, max_date=None, allow_future=False):
-    """
-    Ask for a YYYY-MM-DD date with optional min/max bounds.
-    min_date / max_date : 'YYYY-MM-DD' strings or date objects.
-    allow_future        : if True, dates after today are accepted.
-    """
-    while True:
-        raw = input(f"  {prompt} (YYYY-MM-DD): ").strip()
-        try:
-            parsed = datetime.strptime(raw, "%Y-%m-%d").date()
-        except ValueError:
-            print("  ✗ Invalid format. Use YYYY-MM-DD (e.g. 2003-05-21).")
-            continue
-        if not allow_future and parsed > date.today():
-            print("  ✗ Date cannot be in the future.")
-            continue
-        if min_date:
-            min_d = datetime.strptime(min_date, "%Y-%m-%d").date() if isinstance(min_date, str) else min_date
-            if parsed < min_d:
-                print(f"  ✗ Date must be on or after {min_d}.")
-                continue
-        if max_date:
-            max_d = datetime.strptime(max_date, "%Y-%m-%d").date() if isinstance(max_date, str) else max_date
-            if parsed > max_d:
-                print(f"  ✗ Date must be on or before {max_d}.")
-                continue
-        return raw
-
-def ask_date_optional(prompt, min_date=None):
-    """
-    Ask for optional YYYY-MM-DD date. Loops until valid or blank.
-    Returns value string or None if skipped.
-    """
-    while True:
-        raw = input(f"  {prompt} (YYYY-MM-DD, or Enter to skip): ").strip()
-        if not raw:
-            return None
-        try:
-            parsed = datetime.strptime(raw, "%Y-%m-%d").date()
-        except ValueError:
-            print("  ✗ Invalid format. Use YYYY-MM-DD.")
-            continue
-        if min_date:
-            min_d = datetime.strptime(min_date, "%Y-%m-%d").date() if isinstance(min_date, str) else min_date
-            if parsed < min_d:
-                print(f"  ✗ Date must be on or after {min_d}.")
-                continue
-        return raw
-
-def pause():
-    input("\n  Press Enter to return to menu...")

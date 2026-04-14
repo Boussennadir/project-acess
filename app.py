@@ -5,7 +5,7 @@
 # Requires: pip install PyQt6
 # ============================================================
 
-import sys, re, uuid
+import sys, re
 from datetime import date, datetime
 
 from PyQt6.QtWidgets import (
@@ -20,10 +20,6 @@ from PyQt6.QtCore  import Qt, QDate
 from PyQt6.QtGui   import QColor
 
 from db    import get_connection, init_db
-from auth import (
-    ensure_person_auth_user, hash_password, lock_until_iso,
-    log_auth_event, validate_password_policy, verify_password,
-)
 from utils import (
     CATEGORIES, TYPE_LABELS, MIN_AGE, SUBCAT_PREFIX,
     HIGH_SCHOOL_TYPES, HONORS_LIST, ACADEMIC_STATUSES,
@@ -197,138 +193,6 @@ def mkbtn(text,obj="btn_p"):
 def sh(txt,color=None):
     c=color or ORANGE; l=QLabel(txt); l.setStyleSheet(f"font-size:14px;font-weight:700;color:{c};padding:6px 0 2px 0;"); return l
 
-
-class ChangePasswordDialog(QDialog):
-    def __init__(self, username, full_name="", birthdate="", parent=None):
-        super().__init__(parent)
-        self.username = username
-        self.full_name = full_name
-        self.birthdate = birthdate
-        self.setWindowTitle("Change Password")
-        self.setMinimumWidth(460)
-        v = QVBoxLayout(self)
-        v.addWidget(QLabel("<b>First login detected — change your password.</b>"))
-        self.current = QLineEdit(); self.current.setEchoMode(QLineEdit.EchoMode.Password)
-        self.new = QLineEdit(); self.new.setEchoMode(QLineEdit.EchoMode.Password)
-        self.confirm = QLineEdit(); self.confirm.setEchoMode(QLineEdit.EchoMode.Password)
-        self.err = QLabel(""); self.err.setObjectName("err")
-        v.addWidget(fw("Current Password", self.current))
-        v.addWidget(fw("New Password", self.new))
-        v.addWidget(fw("Confirm Password", self.confirm))
-        v.addWidget(self.err)
-        row = QHBoxLayout()
-        ok = mkbtn("Update Password")
-        cancel = mkbtn("Cancel", "btn_s")
-        ok.clicked.connect(self._apply)
-        cancel.clicked.connect(self.reject)
-        row.addWidget(ok); row.addWidget(cancel); row.addStretch()
-        v.addLayout(row)
-
-    def _apply(self):
-        conn = get_connection()
-        rec = conn.execute("SELECT * FROM auth_user WHERE username=?", (self.username,)).fetchone()
-        if not rec or not verify_password(self.current.text(), rec["password_hash"]):
-            self.err.setText("Current password is incorrect."); conn.close(); return
-        new_pw = self.new.text()
-        if new_pw != self.confirm.text():
-            self.err.setText("Password confirmation does not match."); conn.close(); return
-        ok, msg = validate_password_policy(new_pw, self.username, self.full_name, self.birthdate)
-        if not ok:
-            self.err.setText(msg); conn.close(); return
-        conn.execute(
-            "UPDATE auth_user SET password_hash=?, first_login=0, password_changed_at=datetime('now') WHERE username=?",
-            (hash_password(new_pw), self.username),
-        )
-        conn.commit(); conn.close()
-        self.accept()
-
-
-class LoginDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.session = None
-        self.setWindowTitle("University Authentication")
-        self.setMinimumWidth(460)
-        v = QVBoxLayout(self)
-        title = QLabel("Authentication System"); title.setObjectName("h1")
-        v.addWidget(title)
-        v.addWidget(QLabel("Use admin/admin for full management access.", objectName="sub"))
-        self.username = QLineEdit(); self.username.setPlaceholderText("Username")
-        self.password = QLineEdit(); self.password.setEchoMode(QLineEdit.EchoMode.Password); self.password.setPlaceholderText("Password")
-        self.err = QLabel(""); self.err.setObjectName("err")
-        v.addWidget(fw("Username / Identity ID", self.username))
-        v.addWidget(fw("Password", self.password))
-        v.addWidget(self.err)
-        btn = mkbtn("Login")
-        btn.clicked.connect(self._login)
-        v.addWidget(btn, alignment=Qt.AlignmentFlag.AlignLeft)
-
-    def _login(self):
-        user = self.username.text().strip()
-        pw = self.password.text()
-        if not user or not pw:
-            self.err.setText("Username and password are required."); return
-        conn = get_connection()
-        rec = conn.execute("SELECT * FROM auth_user WHERE username=?", (user,)).fetchone()
-        if not rec:
-            log_auth_event(conn, user, 0, "unknown-user")
-            conn.commit(); conn.close()
-            self.err.setText("Invalid credentials."); return
-        if rec["locked_until"] and datetime.utcnow() < datetime.strptime(rec["locked_until"], "%Y-%m-%d %H:%M:%S"):
-            self.err.setText("Account locked for 30 minutes after too many failed attempts."); conn.close(); return
-        if not verify_password(pw, rec["password_hash"]):
-            attempts = rec["failed_attempts"] + 1
-            locked = lock_until_iso() if attempts >= 5 else None
-            conn.execute("UPDATE auth_user SET failed_attempts=?, locked_until=? WHERE id=?", (attempts, locked, rec["id"]))
-            log_auth_event(conn, user, 0, "invalid-password")
-            conn.commit(); conn.close()
-            self.err.setText("Invalid credentials."); return
-        conn.execute("UPDATE auth_user SET failed_attempts=0, locked_until=NULL WHERE id=?", (rec["id"],))
-        sid = str(uuid.uuid4())
-        log_auth_event(conn, user, 1, "", 0, sid)
-        person = conn.execute("SELECT * FROM person WHERE id=?", (rec["person_id"],)).fetchone() if rec["person_id"] else None
-        conn.commit(); conn.close()
-        self.session = {"username": user, "role": rec["role"], "first_login": rec["first_login"], "person": person}
-        self.accept()
-
-
-class StudentPortalWindow(QMainWindow):
-    def __init__(self, session):
-        super().__init__()
-        self.session = session
-        p = session["person"]
-        self.setWindowTitle(f"Student Portal — {session['username']}")
-        self.setMinimumSize(980, 660)
-        root = QWidget(); self.setCentralWidget(root)
-        v = QVBoxLayout(root); v.setContentsMargins(26, 24, 26, 24)
-        h1 = QLabel("User Security Dashboard"); h1.setObjectName("h1"); v.addWidget(h1)
-        v.addWidget(QLabel(f"Logged in as: {session['username']} (L1 Basic)", objectName="sub"))
-        card = QWidget(); card.setObjectName("card"); g = QGridLayout(card); g.setSpacing(10)
-        info = [
-            ("Identity ID", p["unique_identifier"]), ("Full Name", f"{p['first_name']} {p['last_name']}"),
-            ("Category", TYPE_LABELS.get(p["type"], p["type"])), ("Sub-category", p["sub_category"]),
-            ("Status", p["status"]), ("Email", p["email"]), ("Phone", p["phone"]),
-            ("DOB", p["date_of_birth"]),
-        ]
-        for i, (k, val) in enumerate(info):
-            g.addWidget(QLabel(f"{k}:", styleSheet=f"color:{TEXT2};font-weight:700;"), i, 0)
-            g.addWidget(QLabel(str(val)), i, 1)
-        v.addWidget(card)
-        hist = QTableWidget(0, 3)
-        hist.setHorizontalHeaderLabels(["Time (UTC)", "Success", "Reason"])
-        hist.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        conn = get_connection()
-        rows = conn.execute("SELECT event_time,success,failure_reason FROM auth_event WHERE username=? ORDER BY id DESC LIMIT 20", (session["username"],)).fetchall()
-        conn.close()
-        hist.setRowCount(len(rows))
-        for r, row in enumerate(rows):
-            hist.setItem(r, 0, QTableWidgetItem(row["event_time"]))
-            hist.setItem(r, 1, QTableWidgetItem("Yes" if row["success"] else "No"))
-            hist.setItem(r, 2, QTableWidgetItem(row["failure_reason"] or "—"))
-        v.addWidget(QLabel("Recent Login History", styleSheet=f"font-weight:700;color:{ORANGE};"))
-        v.addWidget(hist)
-
-
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -343,7 +207,7 @@ class MainWindow(QMainWindow):
         self.p_status=StatusPage(self); self.p_promote=PromotePage(self)
         for p in (self.p_dash,self.p_create,self.p_search,self.p_update,self.p_status,self.p_promote):
             self.stack.addWidget(p)
-        self._btns=[]; self.goto(0)
+        self.goto(0)
 
     def _make_sb(self):
         sb=QWidget(); sb.setObjectName("sidebar")
@@ -364,6 +228,9 @@ class MainWindow(QMainWindow):
         vl.addWidget(ver); return sb
 
     def goto(self,idx):
+        # Guard: stack may not have the auth page yet during init
+        if idx >= self.stack.count():
+            return
         self.stack.setCurrentIndex(idx)
         for i,b in enumerate(self._btns):
             b.setObjectName("nav_on" if i==idx else "nav"); b.style().unpolish(b); b.style().polish(b)
@@ -492,9 +359,48 @@ class CreatePage(QWidget):
         if   self._cat=="STU": self._form_stu()
         elif self._cat=="FAC": self._form_fac()
         elif self._cat=="STF": self._form_stf()
+        # ── Login Credentials Section
+        self._vl.addWidget(sh("Login Credentials",GREEN))
+        cred_card=QWidget(); cred_card.setObjectName("card_green"); cg2=QGridLayout(cred_card); cg2.setSpacing(10)
+        uname_info=QLabel("Username = the generated University ID (e.g. STU2024001). Optionally set a custom username.")
+        uname_info.setStyleSheet(f"color:{TEXT2};font-size:11px;"); uname_info.setWordWrap(True)
+        cg2.addWidget(uname_info,0,0,1,2)
+        self._tf(cg2,1,0,"Custom Username (optional — leave blank to use ID)","cred_username")
+        self._fields["cred_username"].setPlaceholderText("Leave blank to use the generated University ID")
+        pw_container=QWidget(); pw_row_l=QHBoxLayout(pw_container); pw_row_l.setContentsMargins(0,0,0,0); pw_row_l.setSpacing(0)
+        self._pw_field=QLineEdit(); self._pw_field.setEchoMode(QLineEdit.EchoMode.Password)
+        self._pw_field.setPlaceholderText("Enter initial password"); self._pw_field.setMinimumHeight(36)
+        self._pw_show=QPushButton("👁"); self._pw_show.setFixedSize(36,36)
+        self._pw_show.setStyleSheet(f"background:{BG3};border:1px solid {BORDER};color:{TEXT2};")
+        self._pw_show.setCursor(Qt.CursorShape.PointingHandCursor); self._pw_show.setCheckable(True)
+        self._pw_show.toggled.connect(lambda c: self._pw_field.setEchoMode(QLineEdit.EchoMode.Normal if c else QLineEdit.EchoMode.Password))
+        pw_row_l.addWidget(self._pw_field); pw_row_l.addWidget(self._pw_show)
+        self._pw_err=errlbl()
+        pc_container=QWidget(); pc_row_l=QHBoxLayout(pc_container); pc_row_l.setContentsMargins(0,0,0,0); pc_row_l.setSpacing(0)
+        self._pw_conf=QLineEdit(); self._pw_conf.setEchoMode(QLineEdit.EchoMode.Password)
+        self._pw_conf.setPlaceholderText("Confirm password"); self._pw_conf.setMinimumHeight(36)
+        self._pc_show=QPushButton("👁"); self._pc_show.setFixedSize(36,36)
+        self._pc_show.setStyleSheet(f"background:{BG3};border:1px solid {BORDER};color:{TEXT2};")
+        self._pc_show.setCursor(Qt.CursorShape.PointingHandCursor); self._pc_show.setCheckable(True)
+        self._pc_show.toggled.connect(lambda c: self._pw_conf.setEchoMode(QLineEdit.EchoMode.Normal if c else QLineEdit.EchoMode.Password))
+        pc_row_l.addWidget(self._pw_conf); pc_row_l.addWidget(self._pc_show)
+        self._pc_err=errlbl()
+        from login_window import PasswordStrengthBar
+        self._pw_strength=PasswordStrengthBar()
+        self._pw_field.textChanged.connect(self._pw_strength.update_strength)
+        pw_wrap=QWidget(); pwv=QVBoxLayout(pw_wrap); pwv.setContentsMargins(0,0,0,0); pwv.setSpacing(2)
+        pwv.addWidget(flbl("Initial Password *")); pwv.addWidget(pw_container); pwv.addWidget(self._pw_err); pwv.addWidget(self._pw_strength)
+        cg2.addWidget(pw_wrap,2,0)
+        pc_wrap=QWidget(); pcv=QVBoxLayout(pc_wrap); pcv.setContentsMargins(0,0,0,0); pcv.setSpacing(2)
+        pcv.addWidget(flbl("Confirm Password *")); pcv.addWidget(pc_container); pcv.addWidget(self._pc_err)
+        cg2.addWidget(pc_wrap,2,1)
+        policy_lbl=QLabel("Policy: 8-64 chars · 3 of 4: uppercase, lowercase, number, special (!@#$%^&*)\nUser must change password on first login.")
+        policy_lbl.setStyleSheet(f"color:{TEXT2};font-size:10px;background:{BG3};padding:6px 8px;border-radius:3px;")
+        policy_lbl.setWordWrap(True); cg2.addWidget(policy_lbl,3,0,1,2)
+        self._vl.addWidget(cred_card)
         # submit
         row=QHBoxLayout()
-        ok=mkbtn("✓  Create Identity"); ok.setMinimumHeight(42); ok.clicked.connect(self._submit)
+        ok=mkbtn("✓  Create Identity & Account"); ok.setMinimumHeight(42); ok.clicked.connect(self._submit)
         rst=mkbtn("Reset","btn_s"); rst.clicked.connect(self._step0)
         row.addWidget(ok); row.addWidget(rst); row.addStretch()
         rw=QWidget(); rw.setLayout(row); self._vl.addWidget(rw); self._vl.addStretch()
@@ -524,9 +430,12 @@ class CreatePage(QWidget):
     def _form_fac(self):
         self._vl.addWidget(sh("Professional Information"))
         card=QWidget(); card.setObjectName("card"); g=QGridLayout(card); g.setSpacing(10)
+        
+        # ── Updated mapping to match the exact names in utils.py ──
         rm={"Tenured":["Professor","Associate Professor","Assistant Professor"],
-            "Adjunct / Part-time":["Assistant Professor","Lecturer","Teaching Assistant"],
-            "Visiting Researcher":FACULTY_RANKS}
+            "Adjunct/Part-time":["Assistant Professor","Lecturer","Teaching Assistant"],
+            "Visiting Researchers":FACULTY_RANKS}
+            
         rank=QComboBox(); rank.addItems(rm.get(self._sub,FACULTY_RANKS)); self._fields["rank"]=rank
         g.addWidget(fw("Rank *",rank),0,0)
         emp=QComboBox(); emp.addItems(EMPLOYMENT_CATS); self._fields["emp_cat"]=emp
@@ -596,6 +505,8 @@ class CreatePage(QWidget):
                 w.setProperty("err","1" if m else "0"); w.style().unpolish(w); w.style().polish(w)
     def _cerrs(self):
         for k in self._errs: self._serr(k,"")
+        if hasattr(self,"_pw_err") and self._pw_err: self._pw_err.setText("")
+        if hasattr(self,"_pc_err") and self._pc_err: self._pc_err.setText("")
 
     def _submit(self):
         self._cerrs(); errors={}
@@ -636,6 +547,22 @@ class CreatePage(QWidget):
             try: float(self._get("teaching_h"))
             except: errors["teaching_h"]="Must be a number."
         if self._cat=="STF" and len(self._get("job_title"))<2: errors["job_title"]="Required."
+        # ── Validate credentials ────────────────────────────
+        from auth import validate_password_policy
+        fn_now=self._get("first_name"); ln_now=self._get("last_name")
+        cred_uname=self._get("cred_username")
+        pw_now=self._pw_field.text(); pc_now=self._pw_conf.text()
+        if not pw_now:
+            self._pw_err.setText("Password is required.")
+            errors["__pw"]="required"
+        else:
+            pw_errs=validate_password_policy(pw_now, cred_uname or "user", fn_now, ln_now)
+            if pw_errs:
+                self._pw_err.setText(pw_errs[0]); errors["__pw"]="policy"
+            elif pw_now!=pc_now:
+                self._pc_err.setText("Passwords do not match."); errors["__pc"]="mismatch"
+            else:
+                self._pw_err.setText(""); self._pc_err.setText("")
         for k,m in errors.items(): self._serr(k,m)
         if errors: return
         conn=get_connection()
@@ -656,18 +583,29 @@ class CreatePage(QWidget):
         elif self._cat=="STF":
             conn.execute("INSERT INTO staff (person_id,department,job_title,grade,entry_date) VALUES (?,?,?,?,?)",
                 (pid,self._get("dept"),self._get("job_title"),self._get("grade"),self._get("entry_date")))
-        ensure_person_auth_user(conn, pid, new_id, dob)
         conn.commit(); conn.close()
-        d=QDialog(self); d.setWindowTitle("Identity Created"); d.setMinimumWidth(340)
+        # ── Create auth account simultaneously ──────────────
+        from auth import create_user_account, validate_password_policy
+        chosen_uname = self._get("cred_username") or new_id
+        pw_val = self._pw_field.text()
+        auth_ok, auth_result = create_user_account(chosen_uname, pid, pw_val)
+        # show result dialog
+        d=QDialog(self); d.setWindowTitle("Identity Created"); d.setMinimumWidth(380)
         dv=QVBoxLayout(d); dv.setContentsMargins(28,28,28,28); dv.setSpacing(10)
         dv.addWidget(QLabel("✓",styleSheet=f"font-size:44px;color:{GREEN};",alignment=Qt.AlignmentFlag.AlignCenter))
         dv.addWidget(QLabel("<b>Identity Created Successfully</b>",alignment=Qt.AlignmentFlag.AlignCenter))
         dv.addWidget(QLabel(f"Name: <b>{fn} {ln}</b>",alignment=Qt.AlignmentFlag.AlignCenter))
         dv.addWidget(QLabel(f"<span style='font-size:16px;font-weight:700;color:{ORANGE};'>{new_id}</span>",alignment=Qt.AlignmentFlag.AlignCenter))
-        dv.addWidget(QLabel(f"Login username: <b>{new_id}</b>",alignment=Qt.AlignmentFlag.AlignCenter))
-        dv.addWidget(QLabel(f"Temporary password: <b>{dob.replace('-','')}</b>",alignment=Qt.AlignmentFlag.AlignCenter))
         dv.addWidget(QLabel(f"Status: <b style='color:{ORANGE};'>Pending</b>",alignment=Qt.AlignmentFlag.AlignCenter))
-        ok=mkbtn("OK"); ok.clicked.connect(d.accept); dv.addWidget(ok,alignment=Qt.AlignmentFlag.AlignCenter)
+        sep_w=QFrame(); sep_w.setFrameShape(QFrame.Shape.HLine); sep_w.setStyleSheet(f"background:{BORDER};"); dv.addWidget(sep_w)
+        if auth_ok:
+            dv.addWidget(QLabel(f"<b style='color:{GREEN};'>🔐 Login Account Created</b>",alignment=Qt.AlignmentFlag.AlignCenter))
+            dv.addWidget(QLabel(f"Username: <b style='color:{ORANGE};'>{chosen_uname}</b>",alignment=Qt.AlignmentFlag.AlignCenter))
+            dv.addWidget(QLabel("User must change password on first login.",styleSheet=f"color:{TEXT2};font-size:11px;",alignment=Qt.AlignmentFlag.AlignCenter))
+        else:
+            dv.addWidget(QLabel(f"<b style='color:{RED};'>⚠ Identity created but account failed:</b>",alignment=Qt.AlignmentFlag.AlignCenter))
+            dv.addWidget(QLabel(str(auth_result),styleSheet=f"color:{RED};font-size:11px;",alignment=Qt.AlignmentFlag.AlignCenter))
+        ok_btn=mkbtn("OK"); ok_btn.clicked.connect(d.accept); dv.addWidget(ok_btn,alignment=Qt.AlignmentFlag.AlignCenter)
         d.exec(); self.mw.refresh_all(); self._step0()
 
 
@@ -1149,12 +1087,16 @@ class PromotePage(QWidget):
         c1=QWidget(); c1.setObjectName("card"); g1=QGridLayout(c1); g1.setSpacing(10)
         sc_cb=QComboBox(); sc_cb.addItems(CATEGORIES["FAC"]["subcategories"]); self._ff["sub_cat"]=sc_cb
         g1.addWidget(fw("Faculty Sub-category *",sc_cb),0,0)
+        
+        # ── Updated mapping to match the exact names in utils.py ──
         rm={"Tenured":["Professor","Associate Professor","Assistant Professor"],
-            "Adjunct / Part-time":["Assistant Professor","Lecturer","Teaching Assistant"],
-            "Visiting Researcher":FACULTY_RANKS}
+            "Adjunct/Part-time":["Assistant Professor","Lecturer","Teaching Assistant"],
+            "Visiting Researchers":FACULTY_RANKS}
+            
         rank_cb=QComboBox(); rank_cb.addItems(rm.get(sc_cb.currentText(),FACULTY_RANKS)); self._ff["rank"]=rank_cb
         g1.addWidget(fw("Rank *",rank_cb),0,1)
         sc_cb.currentTextChanged.connect(lambda t:(rank_cb.clear(),rank_cb.addItems(rm.get(t,FACULTY_RANKS))))
+        
         emp=QComboBox(); emp.addItems(EMPLOYMENT_CATS); self._ff["emp_cat"]=emp
         g1.addWidget(fw("Employment Category *",emp),1,0)
         appt=QDateEdit(); appt.setCalendarPopup(True); appt.setDisplayFormat("yyyy-MM-dd")
@@ -1183,7 +1125,7 @@ class PromotePage(QWidget):
         th=QLineEdit(); th.setPlaceholderText("e.g. 12.0"); self._ff["teaching_h"]=th
         e=errlbl(); self._fe["teaching_h"]=e; g3.addWidget(fw("Teaching Hours / week *",th,e),1,1)
         self._fvl.addWidget(sh("Contract")); self._fvl.addWidget(c3); self._fvl.addStretch()
-
+        
     def _gf(self,k):
         w=self._ff.get(k)
         if isinstance(w,QLineEdit): return w.text().strip()
@@ -1224,7 +1166,6 @@ class PromotePage(QWidget):
             new_pid=conn.execute("SELECT last_insert_rowid()").fetchone()[0]
             conn.execute("INSERT INTO faculty (person_id,rank,employment_category,appointment_start,primary_department,secondary_departments,office_building,office_floor,office_room,phd_institution,research_areas,hdr,contract_type,contract_start,contract_end,teaching_hours) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (new_pid,self._gf("rank"),self._gf("emp_cat"),self._gf("appt_start"),self._gf("primary_dept"),self._gf("secondary") or None,self._gf("bldg") or None,self._gf("floor") or None,self._gf("room") or None,self._gf("phd_inst") or None,self._gf("research") or None,1 if self._gf("hdr")=="Yes" else 0,self._gf("contract_type"),self._gf("contract_start"),self._gf("contract_end") or None,float(self._gf("teaching_h"))))
-            ensure_person_auth_user(conn, new_pid, new_id, stu["date_of_birth"])
             log_history(conn,new_pid,"PROMOTED_FROM_STUDENT",note=f"Promoted from student ID: {stu['unique_identifier']}")
             conn.commit()
         except Exception as e:
@@ -1248,22 +1189,111 @@ class PromotePage(QWidget):
 
 if __name__=="__main__":
     init_db()
+    from auth import init_auth_db
+    init_auth_db()
+
+    from login_window import LoginWindow, UserProfileWindow, AuthManagementPage
+
     app=QApplication(sys.argv); app.setStyleSheet(QSS)
     app.setApplicationName("IAM — Batna 2")
-    login = LoginDialog()
-    if login.exec() != QDialog.DialogCode.Accepted or not login.session:
-        sys.exit(0)
-    session = login.session
-    if session["first_login"]:
-        person = session.get("person")
-        full_name = f"{person['first_name']} {person['last_name']}" if person else ""
-        birthdate = person["date_of_birth"] if person else ""
-        cp = ChangePasswordDialog(session["username"], full_name, birthdate)
-        if cp.exec() != QDialog.DialogCode.Accepted:
-            sys.exit(0)
-    if session["role"] == "admin":
-        w = MainWindow()
-    else:
-        w = StudentPortalWindow(session)
-    w.show()
+
+    # ── Extend MainWindow to include Auth Management page ────
+    # Do this BEFORE any instance is created
+    _orig_make_sb = MainWindow._make_sb
+
+    def _new_make_sb(self):
+        sb = QWidget(); sb.setObjectName("sidebar")
+        vl = QVBoxLayout(sb); vl.setContentsMargins(0,24,0,20); vl.setSpacing(0)
+        logo = QLabel("🎓  IAM System"); logo.setObjectName("logo"); logo.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        uni  = QLabel("University of Batna 2"); uni.setObjectName("uni"); uni.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        vl.addWidget(logo); vl.addWidget(uni); vl.addWidget(sep()); vl.addSpacing(6)
+        items = [
+            ("🏠  Dashboard",         0),
+            ("➕  Create Identity",    1),
+            ("🔍  Search",             2),
+            ("✏️   Update",            3),
+            ("🔄  Change Status",      4),
+            ("🎓  Promote Student → FAC", 5),
+            ("🔐  Auth Management",    6),
+        ]
+        self._btns = []
+        for lbl, idx in items:
+            b = QPushButton(lbl); b.setObjectName("nav")
+            b.clicked.connect(lambda _, i=idx: self.goto(i))
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            vl.addWidget(b); self._btns.append(b)
+        vl.addStretch()
+        # Sign Out button
+        logout_btn = QPushButton("⬅  Sign Out")
+        logout_btn.setObjectName("_logout_btn")
+        logout_btn.setStyleSheet(f"""
+            QPushButton {{
+                background:transparent;color:{RED};border:1px solid {RED};
+                border-radius:3px;padding:9px 16px;margin:12px 16px 4px 16px;
+                font-size:12px;font-weight:700;
+            }}
+            QPushButton:hover {{ background:{RED};color:{BG}; }}
+        """)
+        logout_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # callback set after window is created — stored as reference
+        self._logout_btn = logout_btn
+        vl.addWidget(logout_btn)
+        ver = QLabel("v2.0  •  IAM Project"); ver.setObjectName("ver"); ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        vl.addWidget(ver)
+        return sb
+
+    MainWindow._make_sb = _new_make_sb
+
+    _orig_init = MainWindow.__init__
+
+    def _new_init(self):
+        _orig_init(self)
+        # Add Auth Management page to stack (index 6)
+        self.p_auth = AuthManagementPage(self)
+        self.stack.addWidget(self.p_auth)
+
+    MainWindow.__init__ = _new_init
+
+    # ── App controller ───────────────────────────────────────
+    _login_win = None
+    _main_win  = None
+    _user_win  = None
+
+    def show_login():
+        global _login_win, _main_win, _user_win
+        if _main_win:  _main_win.hide()
+        if _user_win:  _user_win.hide()
+        _login_win = LoginWindow()
+        _login_win.login_success_admin.connect(on_admin_login)
+        _login_win.login_success_user.connect(on_user_login)
+        _login_win.setStyleSheet(QSS)
+        _login_win.show()
+
+    def on_admin_login(auth_user):
+        global _main_win, _login_win
+        if _login_win: _login_win.hide()
+        _main_win = MainWindow()
+        _main_win.setStyleSheet(QSS)
+        # Wire logout button (created in _new_make_sb)
+        if hasattr(_main_win, "_logout_btn"):
+            def _do_logout():
+                ans = QMessageBox.question(
+                    _main_win, "Sign Out", "Sign out of the admin panel?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                if ans == QMessageBox.StandardButton.Yes:
+                    _main_win.hide()
+                    show_login()
+            _main_win._logout_btn.clicked.connect(_do_logout)
+        _main_win.show()
+
+    def on_user_login(auth_user):
+        global _user_win, _login_win
+        if _login_win: _login_win.hide()
+        _user_win = UserProfileWindow(auth_user)
+        _user_win.setStyleSheet(QSS)
+        _user_win.logout_requested.connect(lambda: (_user_win.hide(), show_login()))
+        _user_win.show()
+
+    show_login()
     sys.exit(app.exec())
