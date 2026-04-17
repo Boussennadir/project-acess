@@ -1,0 +1,1 @@
+the refresh button dont work in the tab of authentification when i login with admin admin and the security tab dont work when i entre like a normal user and the mfa dont work no sms (i just want to make it simple he give me the code in the same page just for test like this just a demo)

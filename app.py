@@ -595,16 +595,44 @@ class CreatePage(QWidget):
         dv.addWidget(QLabel("✓",styleSheet=f"font-size:44px;color:{GREEN};",alignment=Qt.AlignmentFlag.AlignCenter))
         dv.addWidget(QLabel("<b>Identity Created Successfully</b>",alignment=Qt.AlignmentFlag.AlignCenter))
         dv.addWidget(QLabel(f"Name: <b>{fn} {ln}</b>",alignment=Qt.AlignmentFlag.AlignCenter))
-        dv.addWidget(QLabel(f"<span style='font-size:16px;font-weight:700;color:{ORANGE};'>{new_id}</span>",alignment=Qt.AlignmentFlag.AlignCenter))
+        # Make ID selectable/copyable
+        id_lbl = QLabel(f"<span style='font-size:16px;font-weight:700;color:{ORANGE};'>{new_id}</span>")
+        id_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        id_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        dv.addWidget(id_lbl)
         dv.addWidget(QLabel(f"Status: <b style='color:{ORANGE};'>Pending</b>",alignment=Qt.AlignmentFlag.AlignCenter))
         sep_w=QFrame(); sep_w.setFrameShape(QFrame.Shape.HLine); sep_w.setStyleSheet(f"background:{BORDER};"); dv.addWidget(sep_w)
         if auth_ok:
             dv.addWidget(QLabel(f"<b style='color:{GREEN};'>🔐 Login Account Created</b>",alignment=Qt.AlignmentFlag.AlignCenter))
-            dv.addWidget(QLabel(f"Username: <b style='color:{ORANGE};'>{chosen_uname}</b>",alignment=Qt.AlignmentFlag.AlignCenter))
+            # Make username selectable/copyable
+            uname_lbl = QLabel(f"Username: <b style='color:{ORANGE};'>{chosen_uname}</b>")
+            uname_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            uname_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            dv.addWidget(uname_lbl)
             dv.addWidget(QLabel("User must change password on first login.",styleSheet=f"color:{TEXT2};font-size:11px;",alignment=Qt.AlignmentFlag.AlignCenter))
         else:
             dv.addWidget(QLabel(f"<b style='color:{RED};'>⚠ Identity created but account failed:</b>",alignment=Qt.AlignmentFlag.AlignCenter))
             dv.addWidget(QLabel(str(auth_result),styleSheet=f"color:{RED};font-size:11px;",alignment=Qt.AlignmentFlag.AlignCenter))
+
+        # Copy helpers (Windows clipboard)
+        def _copy(txt: str):
+            try:
+                QApplication.clipboard().setText(txt or "")
+            except Exception:
+                pass
+
+        btn_row = QHBoxLayout()
+        copy_id_btn = mkbtn("Copy ID", "btn_s")
+        copy_id_btn.clicked.connect(lambda: _copy(new_id))
+        btn_row.addWidget(copy_id_btn)
+        if auth_ok:
+            copy_user_btn = mkbtn("Copy Username", "btn_s")
+            copy_user_btn.clicked.connect(lambda: _copy(chosen_uname))
+            btn_row.addWidget(copy_user_btn)
+        btn_row.addStretch()
+        btn_row_w = QWidget(); btn_row_w.setLayout(btn_row)
+        dv.addWidget(btn_row_w)
+
         ok_btn=mkbtn("OK"); ok_btn.clicked.connect(d.accept); dv.addWidget(ok_btn,alignment=Qt.AlignmentFlag.AlignCenter)
         d.exec(); self.mw.refresh_all(); self._step0()
 
@@ -1150,6 +1178,7 @@ class PromotePage(QWidget):
         if reply!=QMessageBox.StandardButton.Yes: return
 
         conn=get_connection()
+        new_fac_username = None
         try:
             # Archive old student AND free up email/phone so new FAC record can reuse them
             archived_email = f"__archived_{stu['id']}_{stu['email']}"
@@ -1173,12 +1202,32 @@ class PromotePage(QWidget):
             QMessageBox.critical(self,"Error",f"Promotion failed:\n{e}"); return
         conn.close()
 
+        # Create a new FAC login automatically: oldUsername + "FAC"
+        try:
+            from auth import create_promotion_account
+            ok_acc, res_acc = create_promotion_account(stu["id"], new_pid, suffix="FAC")
+            if ok_acc and isinstance(res_acc, dict):
+                new_fac_username = res_acc.get("username")
+        except Exception:
+            new_fac_username = None
+
         d=QDialog(self); d.setWindowTitle("Promotion Complete"); d.setMinimumWidth(400)
         dv=QVBoxLayout(d); dv.setContentsMargins(28,28,28,28); dv.setSpacing(10)
         dv.addWidget(QLabel("🎓",styleSheet="font-size:48px;",alignment=Qt.AlignmentFlag.AlignCenter))
         dv.addWidget(QLabel("<b>Promotion Completed Successfully</b>",alignment=Qt.AlignmentFlag.AlignCenter))
         dv.addWidget(sep())
-        for lbl,val,col in [("Person",f"{stu['first_name']} {stu['last_name']}",TEXT),("Old Student ID",stu["unique_identifier"],STATUS_CLR["Archived"]),("Old Status","Archived",STATUS_CLR["Archived"]),("New Faculty ID",new_id,ORANGE),("New Status","Pending",ORANGE),("Sub-category",sub_cat,GREEN)]:
+        rows = [
+            ("Person", f"{stu['first_name']} {stu['last_name']}", TEXT),
+            ("Old Student ID", stu["unique_identifier"], STATUS_CLR["Archived"]),
+            ("Old Status", "Archived", STATUS_CLR["Archived"]),
+            ("New Faculty ID", new_id, ORANGE),
+            ("New Status", "Pending", ORANGE),
+            ("Sub-category", sub_cat, GREEN),
+        ]
+        if new_fac_username:
+            rows.append(("New FAC Username", new_fac_username, ORANGE))
+            rows.append(("Password", "Same as old account password", TEXT2))
+        for lbl,val,col in rows:
             rw=QWidget(); rl=QHBoxLayout(rw); rl.setContentsMargins(0,2,0,2)
             rl.addWidget(QLabel(lbl+":",styleSheet=f"color:{TEXT2};min-width:140px;"))
             rl.addWidget(QLabel(val,styleSheet=f"color:{col};font-weight:700;")); rl.addStretch()

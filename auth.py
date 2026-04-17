@@ -4,12 +4,76 @@
 # ============================================================
 
 import sqlite3, os, hashlib, secrets, string, re
+import json
+import smtplib
+import ssl
+from email.message import EmailMessage
 import base64
 import hmac
 from datetime import datetime, timedelta
 from db import get_connection, DB_PATH
 
 AUTH_DB_PATH = os.path.join(os.path.dirname(DB_PATH), "auth.db")
+EMAIL_CFG_PATH = os.path.join(os.path.dirname(__file__), "email_config.json")
+
+def _load_email_config():
+    """Load SMTP config from email_config.json (kept out of source control)."""
+    try:
+        with open(EMAIL_CFG_PATH, "r", encoding="utf-8") as f:
+            cfg = json.load(f) or {}
+        return True, cfg
+    except FileNotFoundError:
+        return False, "Missing email_config.json (configure Gmail App Password)."
+    except Exception as e:
+        return False, f"Failed to read email_config.json: {e}"
+
+def _mask_email(addr: str) -> str:
+    a = (addr or "").strip()
+    if "@" not in a:
+        return a or "email"
+    local, dom = a.split("@", 1)
+    if len(local) <= 2:
+        ml = local[:1] + "***"
+    else:
+        ml = local[:2] + "***"
+    return f"{ml}@{dom}"
+
+def _send_email_otp(to_email: str, code: str):
+    ok, cfg = _load_email_config()
+    if not ok:
+        return False, cfg
+    host = (cfg.get("smtp_host") or "smtp.gmail.com").strip()
+    port = int(cfg.get("smtp_port") or 587)
+    user = (cfg.get("smtp_user") or "").strip()
+    app_pw = (cfg.get("smtp_app_password") or "").strip()
+    from_name = (cfg.get("from_name") or "IAM System").strip()
+
+    if not user or not app_pw or "PASTE_YOUR_GMAIL_APP_PASSWORD_HERE" in app_pw:
+        return False, "Email OTP not configured. Put your Gmail App Password into email_config.json."
+    if not to_email or "@" not in to_email:
+        return False, "User email is missing/invalid."
+
+    msg = EmailMessage()
+    msg["Subject"] = "IAM Verification Code"
+    msg["From"] = f"{from_name} <{user}>"
+    msg["To"] = to_email
+    msg.set_content(
+        "Your IAM verification code is:\n\n"
+        f"{code}\n\n"
+        f"This code expires in {OTP_VALID_MIN} minutes.\n"
+    )
+
+    ctx = ssl.create_default_context()
+    try:
+        with smtplib.SMTP(host, port, timeout=20) as s:
+            s.ehlo()
+            s.starttls(context=ctx)
+            s.ehlo()
+            s.login(user, app_pw)
+            s.send_message(msg)
+        return True, None
+    except Exception as e:
+        return False, f"Failed to send email: {e}"
 
 # ── Password Policy ──────────────────────────────────────────
 MIN_LEN = 8
@@ -269,7 +333,26 @@ def init_auth_db():
 # ── Auth Operations ──────────────────────────────────────────
 def authenticate(username: str, password: str, ip: str = "localhost"):
     conn = get_auth_connection()
+    # Allow login by either:
+    # - auth username (auth_user.username)
+    # - university identity UID (person.unique_identifier) when auth_user.person_id is linked
     user = conn.execute("SELECT * FROM auth_user WHERE username=?", (username,)).fetchone()
+    if not user:
+        # Try to interpret input as a University ID and resolve to an auth user
+        try:
+            main = get_connection()
+            pr = main.execute(
+                "SELECT id FROM person WHERE unique_identifier=?",
+                ((username or "").strip(),),
+            ).fetchone()
+            main.close()
+            if pr:
+                user = conn.execute(
+                    "SELECT * FROM auth_user WHERE person_id=?",
+                    (pr["id"],),
+                ).fetchone()
+        except Exception:
+            user = None
 
     if not user:
         _log_login(conn, None, username, False, ip, "User not found")
@@ -446,7 +529,7 @@ def _parse_dt(s: str):
         return None
 
 def request_sms_otp(auth_user_id: int):
-    """Returns (ok, code_or_error). For this desktop project, caller can display the code as a 'demo SMS'."""
+    """Returns (ok, delivered_to_or_error). Sends OTP to user's email (Gmail SMTP)."""
     conn = get_auth_connection()
     try:
         row = conn.execute("SELECT * FROM otp_state WHERE auth_user_id=?", (auth_user_id,)).fetchone()
@@ -483,7 +566,33 @@ def request_sms_otp(auth_user_id: int):
             (ch, exp, _now_str(), wstart.strftime("%Y-%m-%d %H:%M:%S"), sent + 1, auth_user_id),
         )
         conn.commit()
-        return True, code
+        # Resolve recipient email
+        u = conn.execute("SELECT username, role, person_id FROM auth_user WHERE id=?", (auth_user_id,)).fetchone()
+        person_id = u["person_id"] if u else None
+
+        # Admin account is not linked to a person record; send to the configured admin Gmail (smtp_user)
+        if not person_id:
+            ok_cfg, cfg = _load_email_config()
+            if not ok_cfg:
+                return False, cfg
+            admin_email = (cfg.get("smtp_user") or "").strip()
+            if not admin_email:
+                return False, "Email sender is not configured (smtp_user missing)."
+            ok_s, err_s = _send_email_otp(admin_email, code)
+            if not ok_s:
+                return False, err_s
+            return True, _mask_email(admin_email)
+        try:
+            main = get_connection()
+            pr = main.execute("SELECT email FROM person WHERE id=?", (person_id,)).fetchone()
+            main.close()
+        except Exception:
+            pr = None
+        to_email = pr["email"] if pr and pr["email"] else None
+        ok_s, err_s = _send_email_otp(to_email, code)
+        if not ok_s:
+            return False, err_s
+        return True, _mask_email(to_email)
     finally:
         conn.close()
 
@@ -901,3 +1010,76 @@ def get_auth_level_info(auth_user_id: int):
     conn.close()
     if not row: return None
     return AUTH_LEVELS.get(row["auth_level"], AUTH_LEVELS[1])
+
+
+# ── Promotion helper ─────────────────────────────────────────
+def create_promotion_account(old_person_id: int, new_person_id: int, suffix: str = "FAC"):
+    """
+    Create a second login for a promoted identity.
+
+    - Finds the existing auth user linked to old_person_id.
+    - Creates a new auth_user linked to new_person_id.
+    - New username is oldUsername + suffix (auto-deduped).
+    - Copies password_hash so the same password works.
+    """
+    if not old_person_id or not new_person_id:
+        return False, "Missing person id(s)."
+
+    conn = get_auth_connection()
+    try:
+        old_u = conn.execute(
+            "SELECT * FROM auth_user WHERE person_id=? AND role='user' ORDER BY id LIMIT 1",
+            (old_person_id,),
+        ).fetchone()
+        if not old_u:
+            return False, "No existing login linked to the old identity."
+
+        base = (old_u["username"] or "").strip()
+        if not base:
+            base = f"user{old_person_id}"
+        suffix_clean = (suffix or "").strip().upper() or "FAC"
+        desired = f"{base}{suffix_clean}"
+
+        # Ensure username uniqueness
+        candidate = desired
+        i = 2
+        while conn.execute("SELECT 1 FROM auth_user WHERE username=?", (candidate,)).fetchone():
+            candidate = f"{desired}{i}"
+            i += 1
+
+        # Choose auth level based on new person type (fallback to 1)
+        default_level = 1
+        try:
+            main = get_connection()
+            p_row = main.execute("SELECT type, sub_category FROM person WHERE id=?", (new_person_id,)).fetchone()
+            main.close()
+            if p_row:
+                p_type = p_row["type"]
+                sub_cat = p_row["sub_category"] or ""
+                default_level = TYPE_DEFAULT_LEVEL.get(p_type, 1)
+                if p_type == "STU" and "International" in sub_cat:
+                    default_level = 2
+        except Exception:
+            default_level = 1
+
+        # Insert new account with same password hash
+        conn.execute(
+            "INSERT INTO auth_user (username, password_hash, person_id, role, must_change_pw, auth_level) VALUES (?,?,?,'user',0,?)",
+            (candidate, old_u["password_hash"], new_person_id, default_level),
+        )
+        conn.commit()
+        return True, {"username": candidate}
+    except sqlite3.IntegrityError:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False, "Username already exists."
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False, str(e)
+    finally:
+        conn.close()

@@ -9,10 +9,11 @@ import secrets
 from datetime import timedelta
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QFrame, QScrollArea, QDialog, QGridLayout,
     QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView,
     QAbstractItemView, QMessageBox, QProgressBar, QComboBox,
+    QStackedWidget,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QImage, QPixmap
@@ -163,7 +164,7 @@ class LoginWindow(QWidget):
         cv.addWidget(sep())
         cv.addSpacing(28)
 
-        # Body: 2 columns (Login left, MFA right)
+        # Body: 2 columns (Login left, Welcome/MFA right)
         body = QWidget()
         br = QHBoxLayout(body)
         br.setContentsMargins(0, 0, 0, 0)
@@ -208,7 +209,7 @@ class LoginWindow(QWidget):
         lv.addWidget(self._err)
         lv.addSpacing(20)
 
-        btn = mkbtn("Sign In")
+        btn = mkbtn("Log-in")
         btn.setMinimumHeight(54)
         btn.setStyleSheet(f"""
             QPushButton {{
@@ -230,7 +231,43 @@ class LoginWindow(QWidget):
 
         lv.addStretch()
 
-        # ── Right column: MFA panel (hidden until needed) ─────
+        # ── Right column: Welcome/MFA stack ───────────────────
+        self._right_stack = QStackedWidget()
+        self._right_stack.setMinimumWidth(420)
+        self._right_stack.setStyleSheet("QStackedWidget { background: transparent; }")
+
+        # Welcome panel (default)
+        # Blend with the main background (no border, no different background).
+        welcome = QWidget()
+        welcome.setStyleSheet("background:transparent;border:none;")
+        wv = QVBoxLayout(welcome)
+        wv.setContentsMargins(22, 22, 22, 22)
+        wv.setSpacing(12)
+
+        w_title = QLabel("Welcome")
+        w_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        w_title.setStyleSheet(
+            f"background:transparent;border:none;"
+            f"font-size:34px;font-weight:900;color:{ORANGE};letter-spacing:2px;"
+        )
+
+        w_msg = QLabel(
+            "Welcome back! Please log in to access your account and continue to the system."
+        )
+        w_msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        w_msg.setWordWrap(True)
+        w_msg.setStyleSheet(
+            f"background:transparent;border:none;"
+            f"color:{TEXT2};font-size:12px;line-height:1.35;"
+        )
+
+        wv.addStretch()
+        wv.addWidget(w_title)
+        wv.addWidget(w_msg)
+        wv.addStretch()
+        self._right_stack.addWidget(welcome)  # index 0
+
+        # ── MFA panel (shown after Sign In) ───────────────────
         self._mfa_box = QWidget()
         # Let it expand with window (bigger, clearer)
         self._mfa_box.setMinimumWidth(420)
@@ -244,6 +281,8 @@ class LoginWindow(QWidget):
         self._mfa_hint = QLabel("")
         self._mfa_hint.setStyleSheet(f"color:{TEXT2};font-size:11px;")
         self._mfa_hint.setWordWrap(True)
+        # Allow copying demo codes (e.g., "Demo SMS: 12345678")
+        self._mfa_hint.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         mvl.addWidget(self._mfa_hint)
 
         # Security questions setup (only shown if L4 needs it and it's not configured yet)
@@ -310,10 +349,12 @@ class LoginWindow(QWidget):
         self._mfa_err.setWordWrap(True)
         mvl.addWidget(self._mfa_err)
 
-        self._mfa_box.hide()
+        self._right_stack.addWidget(self._mfa_box)  # index 1
+        self._right_stack.setCurrentIndex(0)
+
         # Make both columns large and balanced
         br.addWidget(left, 1)
-        br.addWidget(self._mfa_box, 1)
+        br.addWidget(self._right_stack, 1)
         cv.addWidget(body)
 
         cv.addStretch()
@@ -389,7 +430,8 @@ class LoginWindow(QWidget):
         self._code_in.clear()
         self._qr_lbl.clear()
         self._qr_lbl.hide()
-        self._mfa_box.show()
+        if hasattr(self, "_right_stack"):
+            self._right_stack.setCurrentIndex(1)
         self._begin_otp()
         self._code_in.setFocus()
         # Ensure MFA block is visible without manual resize.
@@ -407,18 +449,18 @@ class LoginWindow(QWidget):
     def _begin_otp(self):
         ok, res = request_sms_otp(self._pending_user["id"])
         if not ok:
-            self._mfa_title.setText("🔐 MFA — SMS OTP")
+            self._mfa_title.setText("🔐 MFA — Email OTP")
             self._mfa_hint.setText("OTP required (L2+).")
             self._mfa_err.setText(res)
             return
         lvl = int(self._pending_user.get("auth_level") or 1)
         if lvl >= 4:
-            self._mfa_title.setText("🔐 MFA Step 1/3 — SMS OTP")
+            self._mfa_title.setText("🔐 MFA Step 1/3 — Email OTP")
         elif lvl >= 3:
-            self._mfa_title.setText("🔐 MFA Step 1/2 — SMS OTP")
+            self._mfa_title.setText("🔐 MFA Step 1/2 — Email OTP")
         else:
-            self._mfa_title.setText("🔐 MFA — SMS OTP")
-        self._mfa_hint.setText(f"Enter 8-digit code (Demo SMS: {res})")
+            self._mfa_title.setText("🔐 MFA — Email OTP")
+        self._mfa_hint.setText(f"Enter 8-digit code (sent to: {res})")
         self._code_in.setMaxLength(8)
         self._code_in.setPlaceholderText("Enter 8-digit OTP")
         self._mfa_stage = "otp"
@@ -444,7 +486,8 @@ class LoginWindow(QWidget):
             self._secq_setup.hide()
         self._qr_lbl.clear()
         self._qr_lbl.hide()
-        self._mfa_box.hide()
+        if hasattr(self, "_right_stack"):
+            self._right_stack.setCurrentIndex(0)
         self._username.setEnabled(True)
         self._password.setEnabled(True)
         self._show_pw.setEnabled(True)
@@ -586,7 +629,10 @@ class LoginWindow(QWidget):
         vl = QVBoxLayout(dlg); vl.setContentsMargins(20, 20, 20, 20); vl.setSpacing(10)
         vl.addWidget(QLabel("Enter your username to request a reset token (demo shows token on-screen).", styleSheet=f"color:{TEXT2};"))
         u = QLineEdit(); u.setPlaceholderText("username"); vl.addWidget(u)
-        out = QLabel(""); out.setStyleSheet(f"color:{ORANGE};font-weight:700;"); out.setWordWrap(True)
+        out = QLabel("")
+        out.setStyleSheet(f"color:{ORANGE};font-weight:700;")
+        out.setWordWrap(True)
+        out.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         vl.addWidget(out)
         def req():
             ok, res = request_password_reset(u.text().strip())
