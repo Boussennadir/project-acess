@@ -1,7 +1,0 @@
-{
-  "smtp_host": "smtp.gmail.com",
-  "smtp_port": 587,
-  "smtp_user": "binarycastle8@gmail.com",
-  "smtp_app_password": "bztfmrxrvfmzrkta",
-  "from_name": "IAM System"
-}
