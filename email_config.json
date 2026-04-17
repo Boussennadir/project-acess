@@ -2,6 +2,7 @@
   "smtp_host": "smtp.gmail.com",
   "smtp_port": 587,
   "smtp_user": "exemple@gmail.com",
+  "admin_recovery_email": "exemple@gmail.com",
   "smtp_app_password": "PUT_YOUR_CODE",
   "from_name": "IAM System"
 }
