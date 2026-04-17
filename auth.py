@@ -918,6 +918,9 @@ TYPE_DEFAULT_LEVEL = {"STU": 1, "FAC": 2, "STF": 2, "EXT": 1}
 TYPE_MAX_LEVEL = {"STU": 2, "FAC": 3, "STF": 3, "EXT": 2}
 
 def create_user_account(username: str, person_id: int, initial_password: str = None):
+    username = (username or "").strip()
+    if not username:
+        return False, "Username is required."
     if not initial_password:
         chars = string.ascii_letters + string.digits + "!@#$%"
         initial_password = "".join(secrets.choice(chars) for _ in range(12))
@@ -936,6 +939,11 @@ def create_user_account(username: str, person_id: int, initial_password: str = N
         if p_type == "STU" and "International" in sub_cat:
             default_level = 2
             
+    # Enforce uniqueness (case-insensitive) with a friendly error message.
+    # Note: SQLite's UNIQUE on TEXT is case-sensitive by default, so we also check LOWER().
+    if username_is_taken(username):
+        return False, "Username already exists."
+
     conn = get_auth_connection()
     try:
         conn.execute(
@@ -946,6 +954,21 @@ def create_user_account(username: str, person_id: int, initial_password: str = N
         return True, initial_password
     except sqlite3.IntegrityError:
         conn.close(); return False, "Username already exists."
+
+def username_is_taken(username: str) -> bool:
+    """Returns True if username already exists (case-insensitive)."""
+    u = (username or "").strip()
+    if not u:
+        return False
+    conn = get_auth_connection()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM auth_user WHERE lower(username)=lower(?) LIMIT 1",
+            (u,),
+        ).fetchone()
+        return bool(row)
+    finally:
+        conn.close()
 
 def get_person_for_user(auth_user):
     if not auth_user.get("person_id"): return None

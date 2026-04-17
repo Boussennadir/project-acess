@@ -548,9 +548,11 @@ class CreatePage(QWidget):
             except: errors["teaching_h"]="Must be a number."
         if self._cat=="STF" and len(self._get("job_title"))<2: errors["job_title"]="Required."
         # ── Validate credentials ────────────────────────────
-        from auth import validate_password_policy
+        from auth import validate_password_policy, username_is_taken
         fn_now=self._get("first_name"); ln_now=self._get("last_name")
         cred_uname=self._get("cred_username")
+        if cred_uname and username_is_taken(cred_uname):
+            errors["cred_username"]="Username already exists."
         pw_now=self._pw_field.text(); pc_now=self._pw_conf.text()
         if not pw_now:
             self._pw_err.setText("Password is required.")
