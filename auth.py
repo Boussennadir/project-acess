@@ -75,6 +75,46 @@ def _send_email_otp(to_email: str, code: str):
     except Exception as e:
         return False, f"Failed to send email: {e}"
 
+def _send_password_reset_email(to_email: str, token: str):
+    """Email the one-time password reset token (plaintext in mail only)."""
+    ok, cfg = _load_email_config()
+    if not ok:
+        return False, cfg
+    host = (cfg.get("smtp_host") or "smtp.gmail.com").strip()
+    port = int(cfg.get("smtp_port") or 587)
+    user = (cfg.get("smtp_user") or "").strip()
+    app_pw = (cfg.get("smtp_app_password") or "").strip()
+    from_name = (cfg.get("from_name") or "IAM System").strip()
+
+    if not user or not app_pw or "PASTE_YOUR_GMAIL_APP_PASSWORD_HERE" in app_pw:
+        return False, "Email not configured. Put your Gmail App Password into email_config.json."
+    if not to_email or "@" not in to_email:
+        return False, "Recipient email is missing/invalid."
+
+    msg = EmailMessage()
+    msg["Subject"] = "IAM — Password reset"
+    msg["From"] = f"{from_name} <{user}>"
+    msg["To"] = to_email
+    msg.set_content(
+        "You requested a password reset for your IAM account.\n\n"
+        "Open the IAM application, go to Password Reset, and enter this token under \"Complete reset\":\n\n"
+        f"{token}\n\n"
+        f"This token expires in {RESET_TOKEN_VALID_MIN} minutes.\n"
+        "If you did not request a reset, you can ignore this email.\n"
+    )
+
+    ctx = ssl.create_default_context()
+    try:
+        with smtplib.SMTP(host, port, timeout=20) as s:
+            s.ehlo()
+            s.starttls(context=ctx)
+            s.ehlo()
+            s.login(user, app_pw)
+            s.send_message(msg)
+        return True, None
+    except Exception as e:
+        return False, f"Failed to send email: {e}"
+
 # ── Password Policy ──────────────────────────────────────────
 MIN_LEN = 8
 MAX_LEN = 64
@@ -836,36 +876,168 @@ def secq_verify(auth_user_id: int, a1: str, a2: str):
     finally:
         conn.close()
 
-# ── Password reset (demo token display) ───────────────────────
+# ── Password reset (email delivery) ───────────────────────────
 RESET_TOKEN_VALID_MIN = 60
 
-def request_password_reset(username_or_email: str):
-    """Creates a reset token. In real life, you would email it. Returns (ok, token_or_error)."""
-    if not username_or_email:
-        return False, "Enter username/email."
+def _admin_recovery_email_from_config(cfg: dict) -> str:
+    """Email allowed for `admin` self-service reset; defaults to smtp_user."""
+    return (cfg.get("admin_recovery_email") or cfg.get("smtp_user") or "").strip()
+
+def _password_reset_resolve_identifier(username_or_email: str):
+    """
+    Single field: login username OR registered email.
+    Returns (user_dict, person_dict|None, error_str). person_dict is None for admin.
+    """
+    s = (username_or_email or "").strip()
+    if not s:
+        return None, None, "Enter your username or email address."
+
+    is_email = bool(re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", s))
+
+    if is_email:
+        main = get_connection()
+        try:
+            pr = main.execute(
+                "SELECT id, email, first_name, last_name FROM person WHERE lower(trim(email))=lower(trim(?))",
+                (s,),
+            ).fetchone()
+        finally:
+            main.close()
+        if pr:
+            conn = get_auth_connection()
+            try:
+                u = conn.execute("SELECT * FROM auth_user WHERE person_id=?", (pr["id"],)).fetchone()
+                if not u:
+                    return None, None, "No login account is linked to this email."
+                return dict(u), dict(pr), None
+            finally:
+                conn.close()
+        ok_cfg, cfg = _load_email_config()
+        if not ok_cfg:
+            return None, None, cfg
+        admin_em = _admin_recovery_email_from_config(cfg)
+        if not admin_em or s.lower() != admin_em.lower():
+            return None, None, "No account found for this email."
+        conn = get_auth_connection()
+        try:
+            u = conn.execute(
+                "SELECT * FROM auth_user WHERE lower(trim(username))='admin' AND role='admin' LIMIT 1",
+            ).fetchone()
+            if not u:
+                return None, None, "Admin account not found."
+            return dict(u), None, None
+        finally:
+            conn.close()
+
+    uname = s
+    if uname.lower() == "admin":
+        ok_cfg, cfg = _load_email_config()
+        if not ok_cfg:
+            return None, None, cfg
+        admin_em = _admin_recovery_email_from_config(cfg)
+        if not admin_em:
+            return None, None, (
+                "Admin recovery email is not configured. "
+                "Set admin_recovery_email (or smtp_user) in email_config.json."
+            )
+        conn = get_auth_connection()
+        try:
+            u = conn.execute(
+                "SELECT * FROM auth_user WHERE lower(trim(username))='admin' AND role='admin' LIMIT 1",
+            ).fetchone()
+            if not u:
+                return None, None, "Admin account not found."
+            return dict(u), None, None
+        finally:
+            conn.close()
+
     conn = get_auth_connection()
     try:
-        u = conn.execute("SELECT id, username FROM auth_user WHERE username=?", (username_or_email,)).fetchone()
+        u = conn.execute(
+            "SELECT * FROM auth_user WHERE lower(trim(username))=lower(trim(?))",
+            (uname,),
+        ).fetchone()
         if not u:
-            # We don't have email in auth DB; treat input as username only for now.
-            return False, "User not found."
-        token = secrets.token_urlsafe(24)
-        th = _hash_value(token)
-        exp = (datetime.now() + timedelta(minutes=RESET_TOKEN_VALID_MIN)).strftime("%Y-%m-%d %H:%M:%S")
-        conn.execute("INSERT INTO password_reset (auth_user_id, token_hash, expires_at) VALUES (?,?,?)", (u["id"], th, exp))
-        conn.commit()
-        return True, token
+            return None, None, "No account found for this username."
+        pid = u["person_id"]
+        if not pid:
+            return None, None, "No identity is linked to this username."
     finally:
         conn.close()
 
-def reset_password_with_token(username: str, token: str, new_password: str):
-    if not (username and token and new_password):
-        return False, "Missing fields."
+    main = get_connection()
+    try:
+        pr = main.execute(
+            "SELECT id, email, first_name, last_name FROM person WHERE id=?",
+            (pid,),
+        ).fetchone()
+    finally:
+        main.close()
+    if not pr:
+        return None, None, "No identity linked to this account."
+    return dict(u), dict(pr), None
+
+def _password_reset_dest_email(pr) -> str:
+    if pr:
+        return (pr.get("email") or "").strip()
+    ok_cfg, cfg = _load_email_config()
+    return _admin_recovery_email_from_config(cfg) if ok_cfg else ""
+
+def request_password_reset(username_or_email: str):
+    """Creates a reset token and emails it. One field: username or registered email. Returns (ok, masked_email_or_error)."""
+    u, pr, err = _password_reset_resolve_identifier(username_or_email)
+    if err:
+        return False, err
+
+    to_send = _password_reset_dest_email(pr)
+    if not to_send:
+        return False, "Cannot determine where to send the reset email."
+
+    token = secrets.token_urlsafe(24)
+    th = _hash_value(token)
+    exp = (datetime.now() + timedelta(minutes=RESET_TOKEN_VALID_MIN)).strftime("%Y-%m-%d %H:%M:%S")
+
     conn = get_auth_connection()
     try:
-        u = conn.execute("SELECT * FROM auth_user WHERE username=?", (username,)).fetchone()
-        if not u:
-            return False, "User not found."
+        cur = conn.execute(
+            "INSERT INTO password_reset (auth_user_id, token_hash, expires_at) VALUES (?,?,?)",
+            (u["id"], th, exp),
+        )
+        reset_id = cur.lastrowid
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        conn.close()
+        raise
+
+    ok_send, err_send = _send_password_reset_email(to_send, token)
+    if not ok_send:
+        try:
+            conn.execute("DELETE FROM password_reset WHERE id=?", (reset_id,))
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        conn.close()
+        return False, err_send or "Failed to send email."
+
+    conn.close()
+    return True, _mask_email(to_send)
+
+def reset_password_with_token(username_or_email: str, token: str, new_password: str):
+    if not ((username_or_email or "").strip() and token and new_password):
+        return False, "Missing fields."
+    u, pr, err = _password_reset_resolve_identifier(username_or_email)
+    if err:
+        return False, err
+
+    conn = get_auth_connection()
+    try:
         rows = conn.execute(
             "SELECT * FROM password_reset WHERE auth_user_id=? AND used_at IS NULL ORDER BY id DESC LIMIT 5",
             (u["id"],),
@@ -880,8 +1052,10 @@ def reset_password_with_token(username: str, token: str, new_password: str):
                 break
         if not usable:
             return False, "Invalid or expired token."
-        # enforce policy
-        errs = validate_password_policy(new_password, username)
+        username = u.get("username") or ""
+        fn = (pr.get("first_name") or "") if pr else ""
+        ln = (pr.get("last_name") or "") if pr else ""
+        errs = validate_password_policy(new_password, username, fn, ln)
         if errs:
             return False, "\n".join(errs)
         # history check
@@ -918,9 +1092,6 @@ TYPE_DEFAULT_LEVEL = {"STU": 1, "FAC": 2, "STF": 2, "EXT": 1}
 TYPE_MAX_LEVEL = {"STU": 2, "FAC": 3, "STF": 3, "EXT": 2}
 
 def create_user_account(username: str, person_id: int, initial_password: str = None):
-    username = (username or "").strip()
-    if not username:
-        return False, "Username is required."
     if not initial_password:
         chars = string.ascii_letters + string.digits + "!@#$%"
         initial_password = "".join(secrets.choice(chars) for _ in range(12))
@@ -939,11 +1110,6 @@ def create_user_account(username: str, person_id: int, initial_password: str = N
         if p_type == "STU" and "International" in sub_cat:
             default_level = 2
             
-    # Enforce uniqueness (case-insensitive) with a friendly error message.
-    # Note: SQLite's UNIQUE on TEXT is case-sensitive by default, so we also check LOWER().
-    if username_is_taken(username):
-        return False, "Username already exists."
-
     conn = get_auth_connection()
     try:
         conn.execute(
@@ -954,21 +1120,6 @@ def create_user_account(username: str, person_id: int, initial_password: str = N
         return True, initial_password
     except sqlite3.IntegrityError:
         conn.close(); return False, "Username already exists."
-
-def username_is_taken(username: str) -> bool:
-    """Returns True if username already exists (case-insensitive)."""
-    u = (username or "").strip()
-    if not u:
-        return False
-    conn = get_auth_connection()
-    try:
-        row = conn.execute(
-            "SELECT 1 FROM auth_user WHERE lower(username)=lower(?) LIMIT 1",
-            (u,),
-        ).fetchone()
-        return bool(row)
-    finally:
-        conn.close()
 
 def get_person_for_user(auth_user):
     if not auth_user.get("person_id"): return None

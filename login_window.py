@@ -625,26 +625,40 @@ class LoginWindow(QWidget):
             return
 
     def _forgot_password(self):
-        dlg = QDialog(self); dlg.setWindowTitle("Password Reset (Demo)"); dlg.setMinimumWidth(440)
+        dlg = QDialog(self); dlg.setWindowTitle("Password Reset"); dlg.setMinimumWidth(440)
         vl = QVBoxLayout(dlg); vl.setContentsMargins(20, 20, 20, 20); vl.setSpacing(10)
-        vl.addWidget(QLabel("Enter your username to request a reset token (demo shows token on-screen).", styleSheet=f"color:{TEXT2};"))
-        u = QLineEdit(); u.setPlaceholderText("username"); vl.addWidget(u)
+        vl.addWidget(QLabel(
+            "Enter your login username or the email on file for that account. "
+            "Admin: type \"admin\" (token goes to admin_recovery_email / smtp_user) or type that email directly.",
+            styleSheet=f"color:{TEXT2};"))
+        id_in = QLineEdit(); id_in.setPlaceholderText("username or email"); vl.addWidget(id_in)
         out = QLabel("")
-        out.setStyleSheet(f"color:{ORANGE};font-weight:700;")
+        out.setStyleSheet(f"color:{TEXT2};font-weight:600;")
         out.setWordWrap(True)
         out.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         vl.addWidget(out)
         def req():
-            ok, res = request_password_reset(u.text().strip())
-            out.setText(f"Reset token (demo): {res}" if ok else (res or "Failed."))
-        btn = mkbtn("Request token", "btn_s"); btn.clicked.connect(req); vl.addWidget(btn)
+            ok, res = request_password_reset(id_in.text().strip())
+            if ok:
+                out.setStyleSheet(f"color:{GREEN};font-weight:700;")
+                out.setText(f"Email sent. Check your inbox ({res}) for the reset token.")
+            else:
+                out.setStyleSheet(f"color:{RED};font-weight:700;")
+                out.setText(res or "Failed.")
+        btn = mkbtn("Send reset email", "btn_s"); btn.clicked.connect(req); vl.addWidget(btn)
         vl.addWidget(sep())
-        vl.addWidget(QLabel("Complete reset:", styleSheet=f"color:{TEXT2};"))
-        token_in = QLineEdit(); token_in.setPlaceholderText("token"); vl.addWidget(token_in)
+        vl.addWidget(QLabel(
+            "Complete reset: same username or email as above, token from the email, then new password.",
+            styleSheet=f"color:{TEXT2};"))
+        token_in = QLineEdit(); token_in.setPlaceholderText("token from email"); vl.addWidget(token_in)
         pw = QLineEdit(); pw.setEchoMode(QLineEdit.EchoMode.Password); pw.setPlaceholderText("new password"); vl.addWidget(pw)
         err = QLabel(""); err.setStyleSheet(f"color:{RED};"); err.setWordWrap(True); vl.addWidget(err)
         def apply():
-            ok, e = reset_password_with_token(u.text().strip(), token_in.text().strip(), pw.text())
+            ok, e = reset_password_with_token(
+                id_in.text().strip(),
+                token_in.text().strip(),
+                pw.text(),
+            )
             if ok:
                 QMessageBox.information(dlg, "Done", "Password reset successful. You can now log in.")
                 dlg.accept()
