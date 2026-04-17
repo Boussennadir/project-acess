@@ -15,10 +15,11 @@ Locate the file in the project root and replace the placeholder values:
 
 ```json
 {
-  "smtp_server": "smtp.gmail.com",
+  "smtp_host": "smtp.gmail.com",
   "smtp_port": 587,
-  "email": "your_email@gmail.com",
-  "password": "your_app_password"
+  "smtp_user": "your_email@gmail.com", 
+  "smtp_app_password": "your_app_password", 
+  "from_name": "IAM System" 
 }
 ```
 
