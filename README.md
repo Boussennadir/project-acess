@@ -17,7 +17,8 @@ Locate the file in the project root and replace the placeholder values:
 {
   "smtp_host": "smtp.gmail.com",
   "smtp_port": 587,
-  "smtp_user": "your_email@gmail.com", 
+  "smtp_user": "your_email@gmail.com",
+  "admin_recovery_email": "your_email@gmail.com",
   "smtp_app_password": "your_app_password", 
   "from_name": "IAM System" 
 }
