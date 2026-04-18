@@ -5,7 +5,7 @@
 # Requires: pip install PyQt6
 # ============================================================
 
-import sys, re
+import sys, re, traceback
 from datetime import date, datetime
 
 from PyQt6.QtWidgets import (
@@ -566,31 +566,96 @@ class CreatePage(QWidget):
             else:
                 self._pw_err.setText(""); self._pc_err.setText("")
         for k,m in errors.items(): self._serr(k,m)
-        if errors: return
-        conn=get_connection()
-        try: new_id,prefix=generate_id(conn,self._sub)
-        except ValueError as e: QMessageBox.critical(self,"ID Limit",str(e)); conn.close(); return
-        gen="M" if self._get("gender")=="Male" else "F"
-        conn.execute("INSERT INTO person (unique_identifier,type,sub_category,id_prefix,status,first_name,last_name,date_of_birth,place_of_birth,nationality,gender,email,phone) VALUES (?,?,?,?,'Pending',?,?,?,?,?,?,?,?)",
-            (new_id,self._cat,self._sub,prefix,fn,ln,dob,self._get("place_of_birth"),self._get("nationality"),gen,email,phone))
-        pid=conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        log_history(conn,pid,"CREATE",note=f"{CATEGORIES[self._cat]['label']} — {self._sub}")
-        if self._cat=="STU":
-            grp=self._get("group") if "group" in self._fields else None
-            conn.execute("INSERT INTO student (person_id,high_school_type,high_school_year,high_school_honors,major,entry_year,academic_status,faculty,department,group_name,scholarship) VALUES (?,?,?,?,?,?,'Active',?,?,?,?)",
-                (pid,self._get("hs_type"),int(self._get("hs_year")),self._get("hs_honors"),self._get("major"),int(self._get("entry_year")),self._get("fac"),self._get("dept"),grp,"yes" if self._get("scholarship")=="Yes" else "no"))
-        elif self._cat=="FAC":
-            conn.execute("INSERT INTO faculty (person_id,rank,employment_category,appointment_start,primary_department,secondary_departments,office_building,office_floor,office_room,phd_institution,research_areas,hdr,contract_type,contract_start,contract_end,teaching_hours) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (pid,self._get("rank"),self._get("emp_cat"),self._get("appt_start"),self._get("primary_dept"),self._get("secondary") or None,self._get("bldg") or None,self._get("floor") or None,self._get("room") or None,self._get("phd_inst") or None,self._get("research") or None,1 if self._get("hdr")=="Yes" else 0,self._get("contract_type"),self._get("contract_start"),self._get("contract_end") or None,float(self._get("teaching_h"))))
-        elif self._cat=="STF":
-            conn.execute("INSERT INTO staff (person_id,department,job_title,grade,entry_date) VALUES (?,?,?,?,?)",
-                (pid,self._get("dept"),self._get("job_title"),self._get("grade"),self._get("entry_date")))
-        conn.commit(); conn.close()
+        if errors:
+            return
+
+        conn = get_connection()
+        new_id = None
+        pid = None
+        try:
+            try:
+                new_id, prefix = generate_id(conn, self._sub)
+            except ValueError as e:
+                QMessageBox.critical(self, "ID Limit", str(e))
+                return
+
+            gen = "M" if self._get("gender") == "Male" else "F"
+            conn.execute(
+                "INSERT INTO person (unique_identifier,type,sub_category,id_prefix,status,first_name,last_name,date_of_birth,place_of_birth,nationality,gender,email,phone) VALUES (?,?,?,?,'Pending',?,?,?,?,?,?,?,?)",
+                (
+                    new_id, self._cat, self._sub, prefix, fn, ln, dob,
+                    self._get("place_of_birth"), self._get("nationality"),
+                    gen, email, phone,
+                ),
+            )
+            pid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            log_history(conn, pid, "CREATE", note=f"{CATEGORIES[self._cat]['label']} — {self._sub}")
+
+            if self._cat == "STU":
+                grp = self._get("group") if "group" in self._fields else None
+                conn.execute(
+                    "INSERT INTO student (person_id,high_school_type,high_school_year,high_school_honors,major,entry_year,academic_status,faculty,department,group_name,scholarship) VALUES (?,?,?,?,?,?,'Active',?,?,?,?)",
+                    (
+                        pid, self._get("hs_type"), int(self._get("hs_year")),
+                        self._get("hs_honors"), self._get("major"),
+                        int(self._get("entry_year")), self._get("fac"),
+                        self._get("dept"), grp,
+                        "yes" if self._get("scholarship") == "Yes" else "no",
+                    ),
+                )
+            elif self._cat == "FAC":
+                conn.execute(
+                    "INSERT INTO faculty (person_id,rank,employment_category,appointment_start,primary_department,secondary_departments,office_building,office_floor,office_room,phd_institution,research_areas,hdr,contract_type,contract_start,contract_end,teaching_hours) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        pid, self._get("rank"), self._get("emp_cat"),
+                        self._get("appt_start"), self._get("primary_dept"),
+                        self._get("secondary") or None, self._get("bldg") or None,
+                        self._get("floor") or None, self._get("room") or None,
+                        self._get("phd_inst") or None, self._get("research") or None,
+                        1 if self._get("hdr") == "Yes" else 0,
+                        self._get("contract_type"), self._get("contract_start"),
+                        self._get("contract_end") or None,
+                        float(self._get("teaching_h")),
+                    ),
+                )
+            elif self._cat == "STF":
+                conn.execute(
+                    "INSERT INTO staff (person_id,department,job_title,grade,entry_date) VALUES (?,?,?,?,?)",
+                    (
+                        pid, self._get("dept"), self._get("job_title"),
+                        self._get("grade"), self._get("entry_date"),
+                    ),
+                )
+
+            conn.commit()
+        except Exception as e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            try:
+                tb = traceback.format_exc()
+                with open("crash.log", "a", encoding="utf-8") as f:
+                    f.write("\n\n=== CREATE IDENTITY CRASH ===\n")
+                    f.write(tb)
+            except Exception:
+                tb = None
+            QMessageBox.critical(self, "Create Identity Failed", f"{e}")
+            return
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
         # ── Create auth account simultaneously ──────────────
-        from auth import create_user_account, validate_password_policy
-        chosen_uname = self._get("cred_username") or new_id
-        pw_val = self._pw_field.text()
-        auth_ok, auth_result = create_user_account(chosen_uname, pid, pw_val)
+        try:
+            from auth import create_user_account
+            chosen_uname = self._get("cred_username") or new_id
+            pw_val = self._pw_field.text()
+            auth_ok, auth_result = create_user_account(chosen_uname, pid, pw_val)
+        except Exception as e:
+            auth_ok, auth_result = False, f"Account creation crashed: {e}"
         # show result dialog
         d=QDialog(self); d.setWindowTitle("Identity Created"); d.setMinimumWidth(380)
         dv=QVBoxLayout(d); dv.setContentsMargins(28,28,28,28); dv.setSpacing(10)
@@ -1244,6 +1309,26 @@ if __name__=="__main__":
     init_auth_db()
 
     from login_window import LoginWindow, UserProfileWindow, AuthManagementPage
+
+    def _global_excepthook(exctype, value, tb):
+        msg = "".join(traceback.format_exception(exctype, value, tb))
+        try:
+            with open("crash.log", "a", encoding="utf-8") as f:
+                f.write("\n\n=== UNHANDLED EXCEPTION ===\n")
+                f.write(msg)
+        except Exception:
+            pass
+        try:
+            QMessageBox.critical(None, "App Crash", f"Unhandled error:\n\n{value}\n\nDetails were written to crash.log")
+        except Exception:
+            pass
+        # still chain to default (prints to console if available)
+        try:
+            sys.__excepthook__(exctype, value, tb)
+        except Exception:
+            pass
+
+    sys.excepthook = _global_excepthook
 
     app=QApplication(sys.argv); app.setStyleSheet(QSS)
     app.setApplicationName("IAM — Batna 2")

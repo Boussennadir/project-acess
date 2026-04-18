@@ -371,6 +371,17 @@ def init_auth_db():
     conn.close()
 
 # ── Auth Operations ──────────────────────────────────────────
+def username_is_taken(username: str) -> bool:
+    """Return True if an auth username already exists."""
+    u = (username or "").strip()
+    if not u:
+        return False
+    conn = get_auth_connection()
+    try:
+        return bool(conn.execute("SELECT 1 FROM auth_user WHERE username=? LIMIT 1", (u,)).fetchone())
+    finally:
+        conn.close()
+
 def authenticate(username: str, password: str, ip: str = "localhost"):
     conn = get_auth_connection()
     # Allow login by either:
@@ -1099,9 +1110,13 @@ def create_user_account(username: str, person_id: int, initial_password: str = N
     
     # Check default security level based on user type in standard DB
     default_level = 1
-    main_conn = get_connection()
-    p_row = main_conn.execute("SELECT type, sub_category FROM person WHERE id=?", (person_id,)).fetchone()
-    main_conn.close()
+    try:
+        main_conn = get_connection()
+        p_row = main_conn.execute("SELECT type, sub_category FROM person WHERE id=?", (person_id,)).fetchone()
+        main_conn.close()
+    except Exception:
+        # If the main DB lookup fails for any reason, fall back to L1.
+        p_row = None
     
     if p_row:
         p_type = p_row["type"]
@@ -1119,7 +1134,22 @@ def create_user_account(username: str, person_id: int, initial_password: str = N
         conn.commit(); conn.close()
         return True, initial_password
     except sqlite3.IntegrityError:
-        conn.close(); return False, "Username already exists."
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False, "Username already exists."
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False, f"Account creation failed: {e}"
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 def get_person_for_user(auth_user):
     if not auth_user.get("person_id"): return None
