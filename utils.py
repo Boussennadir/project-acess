@@ -89,7 +89,7 @@ ID_LIMITS = {
 # ─────────────────────────────────────────────────────────────
 # MINIMUM AGE — one value per CATEGORY (applies to all sub-cats)
 MIN_AGE = {
-    "STU": 16,
+    "STU": 17,
     "FAC": 25,
     "STF": 22,
     "EXT": 18,

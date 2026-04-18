@@ -560,10 +560,10 @@ def get_user_auth_level(auth_user_id: int) -> int:
     finally:
         conn.close()
 
-# ── OTP (L2+) — 8 digits, 5 minutes, 3 requests/hour, cooldown 60s, block after 3 wrong ──
+# ── OTP (L2+) — 8 digits, 5 minutes, 5 requests/hour, cooldown 60s, block after 3 wrong ──
 OTP_LEN = 8
 OTP_VALID_MIN = 5
-OTP_MAX_PER_HOUR = 3
+OTP_MAX_PER_HOUR = 5
 OTP_COOLDOWN_SEC = 60
 OTP_MAX_FAIL = 3
 OTP_FAIL_LOCK_MIN = 30
