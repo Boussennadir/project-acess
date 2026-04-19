@@ -806,8 +806,17 @@ class PersonDetailDlg(QDialog):
         conn=get_connection()
         rows=conn.execute("SELECT * FROM history WHERE person_id=? ORDER BY changed_at DESC",(self.p["id"],)).fetchall()
         conn.close()
-        if not rows: vl.addWidget(QLabel("No history.",styleSheet=f"color:{TEXT2};"))
+        visible_rows=[]
         for r in rows:
+            # Hide no-op update entries (old value equals new value).
+            if r["action"]=="UPDATE" and r["field_name"]:
+                old_v = "" if r["old_value"] is None else str(r["old_value"]).strip()
+                new_v = "" if r["new_value"] is None else str(r["new_value"]).strip()
+                if old_v == new_v:
+                    continue
+            visible_rows.append(r)
+        if not visible_rows: vl.addWidget(QLabel("No history.",styleSheet=f"color:{TEXT2};"))
+        for r in visible_rows:
             card=QWidget(); card.setObjectName("card"); cv=QVBoxLayout(card); cv.setSpacing(2)
             cv.addWidget(QLabel(f"<b>{r['action']}</b>  <span style='color:{TEXT2};font-size:11px;'>{r['changed_at']}</span>"))
             if r["field_name"]: cv.addWidget(QLabel(f"  {r['field_name']}: {r['old_value'] or '—'} → {r['new_value'] or '—'}",styleSheet=f"color:{TEXT2};font-size:12px;"))
@@ -962,6 +971,7 @@ class UpdatePage(QWidget):
               "secondary":("faculty","secondary_departments"),"research":("faculty","research_areas"),
               "teaching_h":("faculty","teaching_hours"),"contract_type":("faculty","contract_type"),"contract_end":("faculty","contract_end"),
               "dept_stf":("staff","department"),"job_title":("staff","job_title"),"grade":("staff","grade")}
+        changed=False
         for key,(kind,widget,_) in self._ef.items():
             if kind=="text": val=widget.text().strip()
             elif kind=="combo": val=widget.currentText()
@@ -971,16 +981,28 @@ class UpdatePage(QWidget):
             tbl,col=fmap[key]
             if tbl=="person":
                 old=self._person.get(col)
-                conn.execute(f"UPDATE person SET {col}=? WHERE id=?",(val,pid))
             else:
                 row=conn.execute(f"SELECT * FROM {tbl} WHERE person_id=?",(pid,)).fetchone()
                 if not row: continue
                 old=dict(row).get(col)
+            old_norm = "" if old is None else str(old).strip()
+            new_norm = "" if val is None else str(val).strip()
+            if old_norm == new_norm:
+                continue
+            if tbl=="person":
+                conn.execute(f"UPDATE person SET {col}=? WHERE id=?",(val,pid))
+            else:
                 conn.execute(f"UPDATE {tbl} SET {col}=? WHERE person_id=?",(val,pid))
             log_history(conn,pid,"UPDATE",field=col,old_val=old,new_val=val)
-        conn.execute("UPDATE person SET updated_at=datetime('now') WHERE id=?",(pid,))
-        conn.commit(); conn.close()
-        QMessageBox.information(self,"Saved","Changes saved successfully.")
+            changed=True
+        if changed:
+            conn.execute("UPDATE person SET updated_at=datetime('now') WHERE id=?",(pid,))
+            conn.commit()
+            conn.close()
+            QMessageBox.information(self,"Saved","Changes saved successfully.")
+        else:
+            conn.close()
+            QMessageBox.information(self,"No Changes","No modified data found to save.")
         self.mw.refresh_all(); self.reset()
 
 
