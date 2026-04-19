@@ -115,6 +115,126 @@ def _send_password_reset_email(to_email: str, token: str):
     except Exception as e:
         return False, f"Failed to send email: {e}"
 
+def _send_new_account_email(to_email: str, username: str, password: str):
+    """Send initial credentials for a newly created account."""
+    ok, cfg = _load_email_config()
+    if not ok:
+        return False, cfg
+    host = (cfg.get("smtp_host") or "smtp.gmail.com").strip()
+    port = int(cfg.get("smtp_port") or 587)
+    user = (cfg.get("smtp_user") or "").strip()
+    app_pw = (cfg.get("smtp_app_password") or "").strip()
+    from_name = (cfg.get("from_name") or "IAM System").strip()
+
+    if not user or not app_pw or "PASTE_YOUR_GMAIL_APP_PASSWORD_HERE" in app_pw:
+        return False, "Email not configured. Put your Gmail App Password into email_config.json."
+    if not to_email or "@" not in to_email:
+        return False, "User email is missing/invalid."
+
+    msg = EmailMessage()
+    msg["Subject"] = "IAM — Your account credentials"
+    msg["From"] = f"{from_name} <{user}>"
+    msg["To"] = to_email
+    msg.set_content(
+        "Your IAM account has been created.\n\n"
+        f"Username: {username}\n"
+        f"Temporary password: {password}\n\n"
+        "For security: you must change your password on first login.\n"
+        "If you did not expect this account, please contact the administrator.\n"
+    )
+
+    ctx = ssl.create_default_context()
+    try:
+        with smtplib.SMTP(host, port, timeout=20) as s:
+            s.ehlo()
+            s.starttls(context=ctx)
+            s.ehlo()
+            s.login(user, app_pw)
+            s.send_message(msg)
+        return True, None
+    except Exception as e:
+        return False, f"Failed to send email: {e}"
+
+def _send_failed_login_alert(to_email: str, username: str, ip: str, attempt_count: int):
+    """Send an alert email after suspicious failed logins."""
+    ok, cfg = _load_email_config()
+    if not ok:
+        return False, cfg
+    host = (cfg.get("smtp_host") or "smtp.gmail.com").strip()
+    port = int(cfg.get("smtp_port") or 587)
+    user = (cfg.get("smtp_user") or "").strip()
+    app_pw = (cfg.get("smtp_app_password") or "").strip()
+    from_name = (cfg.get("from_name") or "IAM System").strip()
+
+    if not user or not app_pw or "PASTE_YOUR_GMAIL_APP_PASSWORD_HERE" in app_pw:
+        return False, "Email not configured. Put your Gmail App Password into email_config.json."
+    if not to_email or "@" not in to_email:
+        return False, "User email is missing/invalid."
+
+    msg = EmailMessage()
+    msg["Subject"] = "IAM Security Alert — Failed login attempts"
+    msg["From"] = f"{from_name} <{user}>"
+    msg["To"] = to_email
+    msg.set_content(
+        "We detected failed login attempts on your IAM account.\n\n"
+        f"Username: {username}\n"
+        f"Attempts: {attempt_count}\n"
+        f"Source: {ip or 'unknown'}\n"
+        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        "If this wasn't you, please reset your password immediately and notify the administrator.\n"
+    )
+
+    ctx = ssl.create_default_context()
+    try:
+        with smtplib.SMTP(host, port, timeout=20) as s:
+            s.ehlo()
+            s.starttls(context=ctx)
+            s.ehlo()
+            s.login(user, app_pw)
+            s.send_message(msg)
+        return True, None
+    except Exception as e:
+        return False, f"Failed to send email: {e}"
+
+def send_new_account_credentials(person_id: int, username: str, password: str):
+    """
+    Send initial account credentials to the person's registered email.
+    Returns (ok, masked_email_or_error).
+    """
+    try:
+        main = get_connection()
+        pr = main.execute("SELECT email FROM person WHERE id=?", (person_id,)).fetchone()
+        main.close()
+    except Exception:
+        pr = None
+    to_email = (pr["email"] if pr and pr["email"] else "").strip()
+    ok_s, err_s = _send_new_account_email(to_email, username, password)
+    if not ok_s:
+        return False, err_s
+    return True, _mask_email(to_email)
+
+def send_failed_login_alert(auth_user_row, ip: str, attempt_count: int):
+    """
+    Send an alert email for failed login attempts (when user is linked to a person record).
+    Returns (ok, masked_email_or_error). Safe no-op for unlinked/admin.
+    """
+    if not auth_user_row:
+        return False, "Missing user."
+    pid = auth_user_row["person_id"]
+    if not pid:
+        return False, "No linked person email."
+    try:
+        main = get_connection()
+        pr = main.execute("SELECT email FROM person WHERE id=?", (pid,)).fetchone()
+        main.close()
+    except Exception:
+        pr = None
+    to_email = (pr["email"] if pr and pr["email"] else "").strip()
+    ok_s, err_s = _send_failed_login_alert(to_email, auth_user_row["username"], ip, attempt_count)
+    if not ok_s:
+        return False, err_s
+    return True, _mask_email(to_email)
+
 # ── Password Policy ──────────────────────────────────────────
 MIN_LEN = 8
 MAX_LEN = 64
@@ -424,6 +544,12 @@ def authenticate(username: str, password: str, ip: str = "localhost"):
 
     if not _verify_password(password, user["password_hash"]):
         new_fails = user["failed_attempts"] + 1
+        # Project requirement: alert user after 2 wrong-password attempts
+        if new_fails == 2:
+            try:
+                send_failed_login_alert(user, ip=ip, attempt_count=new_fails)
+            except Exception:
+                pass
         if new_fails >= MAX_FAILED:
             lock_time = (datetime.now() + timedelta(minutes=LOCKOUT_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
             conn.execute("UPDATE auth_user SET failed_attempts=?, locked_until=? WHERE id=?", (new_fails, lock_time, user["id"]))

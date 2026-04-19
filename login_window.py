@@ -400,6 +400,15 @@ class LoginWindow(QWidget):
                 if dlg.exec() != QDialog.DialogCode.Accepted:
                     self._password.clear()
                     return
+                # Requirement: after first-time password change, do NOT enter UI.
+                # User must return to login page and sign in again with the new password.
+                QMessageBox.information(
+                    self,
+                    "Password Changed",
+                    "Password updated successfully.\n\nPlease log in again with your new password.",
+                )
+                self._password.clear()
+                return
 
             # MFA by level
             if auth_level >= 2:

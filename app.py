@@ -367,36 +367,12 @@ class CreatePage(QWidget):
         cg2.addWidget(uname_info,0,0,1,2)
         self._tf(cg2,1,0,"Custom Username (optional — leave blank to use ID)","cred_username")
         self._fields["cred_username"].setPlaceholderText("Leave blank to use the generated University ID")
-        pw_container=QWidget(); pw_row_l=QHBoxLayout(pw_container); pw_row_l.setContentsMargins(0,0,0,0); pw_row_l.setSpacing(0)
-        self._pw_field=QLineEdit(); self._pw_field.setEchoMode(QLineEdit.EchoMode.Password)
-        self._pw_field.setPlaceholderText("Enter initial password"); self._pw_field.setMinimumHeight(36)
-        self._pw_show=QPushButton("👁"); self._pw_show.setFixedSize(36,36)
-        self._pw_show.setStyleSheet(f"background:{BG3};border:1px solid {BORDER};color:{TEXT2};")
-        self._pw_show.setCursor(Qt.CursorShape.PointingHandCursor); self._pw_show.setCheckable(True)
-        self._pw_show.toggled.connect(lambda c: self._pw_field.setEchoMode(QLineEdit.EchoMode.Normal if c else QLineEdit.EchoMode.Password))
-        pw_row_l.addWidget(self._pw_field); pw_row_l.addWidget(self._pw_show)
-        self._pw_err=errlbl()
-        pc_container=QWidget(); pc_row_l=QHBoxLayout(pc_container); pc_row_l.setContentsMargins(0,0,0,0); pc_row_l.setSpacing(0)
-        self._pw_conf=QLineEdit(); self._pw_conf.setEchoMode(QLineEdit.EchoMode.Password)
-        self._pw_conf.setPlaceholderText("Confirm password"); self._pw_conf.setMinimumHeight(36)
-        self._pc_show=QPushButton("👁"); self._pc_show.setFixedSize(36,36)
-        self._pc_show.setStyleSheet(f"background:{BG3};border:1px solid {BORDER};color:{TEXT2};")
-        self._pc_show.setCursor(Qt.CursorShape.PointingHandCursor); self._pc_show.setCheckable(True)
-        self._pc_show.toggled.connect(lambda c: self._pw_conf.setEchoMode(QLineEdit.EchoMode.Normal if c else QLineEdit.EchoMode.Password))
-        pc_row_l.addWidget(self._pw_conf); pc_row_l.addWidget(self._pc_show)
-        self._pc_err=errlbl()
-        from login_window import PasswordStrengthBar
-        self._pw_strength=PasswordStrengthBar()
-        self._pw_field.textChanged.connect(self._pw_strength.update_strength)
-        pw_wrap=QWidget(); pwv=QVBoxLayout(pw_wrap); pwv.setContentsMargins(0,0,0,0); pwv.setSpacing(2)
-        pwv.addWidget(flbl("Initial Password *")); pwv.addWidget(pw_container); pwv.addWidget(self._pw_err); pwv.addWidget(self._pw_strength)
-        cg2.addWidget(pw_wrap,2,0)
-        pc_wrap=QWidget(); pcv=QVBoxLayout(pc_wrap); pcv.setContentsMargins(0,0,0,0); pcv.setSpacing(2)
-        pcv.addWidget(flbl("Confirm Password *")); pcv.addWidget(pc_container); pcv.addWidget(self._pc_err)
-        cg2.addWidget(pc_wrap,2,1)
-        policy_lbl=QLabel("Policy: 8-64 chars · 3 of 4: uppercase, lowercase, number, special (!@#$%^&*)\nUser must change password on first login.")
-        policy_lbl.setStyleSheet(f"color:{TEXT2};font-size:10px;background:{BG3};padding:6px 8px;border-radius:3px;")
-        policy_lbl.setWordWrap(True); cg2.addWidget(policy_lbl,3,0,1,2)
+        policy_lbl=QLabel(
+            "A temporary password will be generated automatically and sent to the user's email along with the username.\n"
+            "User must change password on first login."
+        )
+        policy_lbl.setStyleSheet(f"color:{TEXT2};font-size:10px;background:{BG3};padding:8px 10px;border-radius:3px;")
+        policy_lbl.setWordWrap(True); cg2.addWidget(policy_lbl,2,0,1,2)
         self._vl.addWidget(cred_card)
         # submit
         row=QHBoxLayout()
@@ -505,8 +481,6 @@ class CreatePage(QWidget):
                 w.setProperty("err","1" if m else "0"); w.style().unpolish(w); w.style().polish(w)
     def _cerrs(self):
         for k in self._errs: self._serr(k,"")
-        if hasattr(self,"_pw_err") and self._pw_err: self._pw_err.setText("")
-        if hasattr(self,"_pc_err") and self._pc_err: self._pc_err.setText("")
 
     def _submit(self):
         self._cerrs(); errors={}
@@ -543,28 +517,20 @@ class CreatePage(QWidget):
             hy=self._get("hs_year"); ey=self._get("entry_year"); by=int(dob.split("-")[0])
             if not hy.isdigit() or int(hy)<by+17: errors["hs_year"]=f"Must be >= {by+17}."
             if not ey.isdigit() or (hy.isdigit() and int(ey)<int(hy)): errors["entry_year"]="Must be >= HS year."
+            # cannot be in the future
+            cy = date.today().year
+            if hy.isdigit() and int(hy) > cy: errors["hs_year"]="Cannot be in the future."
+            if ey.isdigit() and int(ey) > cy: errors["entry_year"]="Cannot be in the future."
         if self._cat=="FAC":
             try: float(self._get("teaching_h"))
             except: errors["teaching_h"]="Must be a number."
         if self._cat=="STF" and len(self._get("job_title"))<2: errors["job_title"]="Required."
         # ── Validate credentials ────────────────────────────
-        from auth import validate_password_policy, username_is_taken
+        from auth import username_is_taken
         fn_now=self._get("first_name"); ln_now=self._get("last_name")
         cred_uname=self._get("cred_username")
         if cred_uname and username_is_taken(cred_uname):
             errors["cred_username"]="Username already exists."
-        pw_now=self._pw_field.text(); pc_now=self._pw_conf.text()
-        if not pw_now:
-            self._pw_err.setText("Password is required.")
-            errors["__pw"]="required"
-        else:
-            pw_errs=validate_password_policy(pw_now, cred_uname or "user", fn_now, ln_now)
-            if pw_errs:
-                self._pw_err.setText(pw_errs[0]); errors["__pw"]="policy"
-            elif pw_now!=pc_now:
-                self._pc_err.setText("Passwords do not match."); errors["__pc"]="mismatch"
-            else:
-                self._pw_err.setText(""); self._pc_err.setText("")
         for k,m in errors.items(): self._serr(k,m)
         if errors:
             return
@@ -650,12 +616,21 @@ class CreatePage(QWidget):
 
         # ── Create auth account simultaneously ──────────────
         try:
-            from auth import create_user_account
+            from auth import create_user_account, send_new_account_credentials
             chosen_uname = self._get("cred_username") or new_id
-            pw_val = self._pw_field.text()
-            auth_ok, auth_result = create_user_account(chosen_uname, pid, pw_val)
+            auth_ok, auth_result = create_user_account(chosen_uname, pid, None)
+            email_ok = False
+            email_dest = None
+            if auth_ok and isinstance(auth_result, str):
+                # Send credentials to the person's email
+                try:
+                    email_ok, email_dest = send_new_account_credentials(pid, chosen_uname, auth_result)
+                except Exception:
+                    email_ok, email_dest = False, "Email send failed."
         except Exception as e:
             auth_ok, auth_result = False, f"Account creation crashed: {e}"
+            email_ok = False
+            email_dest = None
         # show result dialog
         d=QDialog(self); d.setWindowTitle("Identity Created"); d.setMinimumWidth(380)
         dv=QVBoxLayout(d); dv.setContentsMargins(28,28,28,28); dv.setSpacing(10)
@@ -676,6 +651,14 @@ class CreatePage(QWidget):
             uname_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             uname_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             dv.addWidget(uname_lbl)
+            if email_ok:
+                dv.addWidget(QLabel(f"Credentials emailed to: <b>{email_dest}</b>",styleSheet=f"color:{TEXT2};font-size:11px;",alignment=Qt.AlignmentFlag.AlignCenter))
+            else:
+                dv.addWidget(QLabel("⚠ Could not email credentials. Copy the temporary password below and share securely.",styleSheet=f"color:{RED};font-size:11px;",alignment=Qt.AlignmentFlag.AlignCenter))
+                pw_lbl = QLabel(f"Temporary Password: <b style='color:{ORANGE};'>{auth_result}</b>")
+                pw_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                pw_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                dv.addWidget(pw_lbl)
             dv.addWidget(QLabel("User must change password on first login.",styleSheet=f"color:{TEXT2};font-size:11px;",alignment=Qt.AlignmentFlag.AlignCenter))
         else:
             dv.addWidget(QLabel(f"<b style='color:{RED};'>⚠ Identity created but account failed:</b>",alignment=Qt.AlignmentFlag.AlignCenter))
