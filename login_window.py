@@ -39,6 +39,37 @@ GREEN = "#66bb6a"; RED = "#e74c3c"; PURPLE = "#9b59b6"; BLUE = "#3498db"
 STATUS_CLR = {"Pending": ORANGE, "Active": GREEN, "Suspended": RED, "Inactive": TEXT2, "Archived": "#505050"}
 
 
+def security_level_bounds(auth_user: dict, person=None):
+    """
+    Return (min_level, max_level) allowed for this account based on project rules.
+    """
+    # Admin accounts are fixed to L4.
+    if (auth_user or {}).get("role") == "admin" or not person:
+        return 4, 4
+
+    user_type = (person or {}).get("type")
+    sub_cat = (person or {}).get("sub_category") or ""
+
+    if user_type == "STU":
+        min_lvl, max_lvl = 1, 2
+        if "International" in sub_cat:
+            min_lvl = 2
+        return min_lvl, max_lvl
+    if user_type == "FAC":
+        return 2, 3
+    if user_type == "STF":
+        return 2, 3
+    if user_type == "EXT":
+        return 1, 2
+    return 1, 4
+
+
+def effective_auth_level(auth_user: dict, person=None):
+    min_lvl, max_lvl = security_level_bounds(auth_user, person)
+    raw = int((auth_user or {}).get("auth_level") or min_lvl)
+    return max(min_lvl, min(raw, max_lvl))
+
+
 def sep():
     f = QFrame(); f.setObjectName("sep"); f.setFrameShape(QFrame.Shape.HLine); return f
 
@@ -387,12 +418,15 @@ class LoginWindow(QWidget):
         result = authenticate(username, password)
         if result["ok"]:
             user = result["user"]
-            auth_level = int(user.get("auth_level") or 1)
+            # Enforce effective level (clamped to allowed range for role/type).
+            p_for_level = get_person_for_user(user)
+            auth_level = effective_auth_level(user, p_for_level)
+            user["auth_level"] = auth_level
 
             # Force password change on first login
             if int(user.get("must_change_pw") or 0) == 1:
                 user_data = dict(user)
-                p = get_person_for_user(user)
+                p = p_for_level
                 if p:
                     user_data["first_name"] = p.get("first_name", "")
                     user_data["last_name"] = p.get("last_name", "")
@@ -1037,6 +1071,8 @@ class UserProfileWindow(QWidget):
         except Exception:
             cur_lvl = 1
 
+        # Clamp UI behavior to allowed min/max for this user type/role.
+        cur_lvl = effective_auth_level(self._auth_user, self._person)
         lvl_name  = _LNAMES[cur_lvl]
         lvl_desc  = _LDESC[cur_lvl]
         lvl_color = _LCOLORS[cur_lvl]
@@ -1136,103 +1172,106 @@ class UserProfileWindow(QWidget):
         vl.addWidget(pwcard)
 
         # ── MFA Setup Card ────────────────────────────────────
-        mcard = QWidget()
-        mcard.setStyleSheet(CARD(PURPLE))
-        mv = QVBoxLayout(mcard); mv.setContentsMargins(16,14,16,14); mv.setSpacing(10)
-        mv.addWidget(QLabel("🛡️  MFA Setup",
-            styleSheet=f"color:{PURPLE};font-size:13px;font-weight:700;background:transparent;border:none;"))
+        # Show only methods allowed by this user's effective level.
+        if cur_lvl >= 3:
+            mcard = QWidget()
+            mcard.setStyleSheet(CARD(PURPLE))
+            mv = QVBoxLayout(mcard); mv.setContentsMargins(16,14,16,14); mv.setSpacing(10)
+            mv.addWidget(QLabel("🛡️  MFA Setup",
+                styleSheet=f"color:{PURPLE};font-size:13px;font-weight:700;background:transparent;border:none;"))
 
-        # TOTP status + setup
-        totp_status = QLabel("")
-        totp_status.setStyleSheet(f"color:{TEXT2};font-size:11px;")
-        mv.addWidget(totp_status)
-        qr_lbl = QLabel(""); qr_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter); qr_lbl.hide()
-        mv.addWidget(qr_lbl)
-        totp_code = QLineEdit(); totp_code.setPlaceholderText("Enter 6-digit TOTP code"); totp_code.setMaxLength(6)
-        totp_code.setMinimumHeight(38); totp_code.hide()
-        mv.addWidget(totp_code)
-        totp_err = QLabel(""); totp_err.setStyleSheet(f"color:{RED};font-size:11px;"); totp_err.setWordWrap(True)
-        mv.addWidget(totp_err)
+            # TOTP (L3+)
+            totp_status = QLabel("")
+            totp_status.setStyleSheet(f"color:{TEXT2};font-size:11px;")
+            mv.addWidget(totp_status)
+            qr_lbl = QLabel(""); qr_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter); qr_lbl.hide()
+            mv.addWidget(qr_lbl)
+            totp_code = QLineEdit(); totp_code.setPlaceholderText("Enter 6-digit TOTP code"); totp_code.setMaxLength(6)
+            totp_code.setMinimumHeight(38); totp_code.hide()
+            mv.addWidget(totp_code)
+            totp_err = QLabel(""); totp_err.setStyleSheet(f"color:{RED};font-size:11px;"); totp_err.setWordWrap(True)
+            mv.addWidget(totp_err)
 
-        def refresh_totp_ui():
-            enabled = totp_is_enabled(self._auth_user["id"])
-            if enabled:
-                totp_status.setText("TOTP: ✓ Enabled (Authenticator app configured).")
-                qr_lbl.hide(); totp_code.hide()
-            else:
-                totp_status.setText("TOTP: Not enabled yet. Click “Setup TOTP” to enroll.")
+            def refresh_totp_ui():
+                enabled = totp_is_enabled(self._auth_user["id"])
+                if enabled:
+                    totp_status.setText("TOTP: ✓ Enabled (Authenticator app configured).")
+                    qr_lbl.hide(); totp_code.hide()
+                else:
+                    totp_status.setText("TOTP: Not enabled yet. Click “Setup TOTP” to enroll.")
 
-        def setup_totp():
-            totp_err.setText("")
-            ok_, info = totp_begin_enroll(self._auth_user["id"])
-            if not ok_:
-                totp_err.setText("Failed to start TOTP enrollment.")
-                return
-            qr = qrcode.QRCode(box_size=8, border=2)
-            qr.add_data(info["otpauth_uri"])
-            qr.make(fit=True)
-            img = qr.make_image(fill_color="black", back_color="white")
-            buf = BytesIO()
-            img.save(buf, format="PNG")
-            qimg = QImage.fromData(buf.getvalue(), "PNG")
-            qr_lbl.setPixmap(QPixmap.fromImage(qimg).scaledToWidth(260, Qt.TransformationMode.FastTransformation))
-            qr_lbl.show()
-            totp_code.show()
-            totp_status.setText("Scan QR with Authenticator, then enter the 6-digit code to confirm.")
+            def setup_totp():
+                totp_err.setText("")
+                ok_, info = totp_begin_enroll(self._auth_user["id"])
+                if not ok_:
+                    totp_err.setText("Failed to start TOTP enrollment.")
+                    return
+                qr = qrcode.QRCode(box_size=8, border=2)
+                qr.add_data(info["otpauth_uri"])
+                qr.make(fit=True)
+                img = qr.make_image(fill_color="black", back_color="white")
+                buf = BytesIO()
+                img.save(buf, format="PNG")
+                qimg = QImage.fromData(buf.getvalue(), "PNG")
+                qr_lbl.setPixmap(QPixmap.fromImage(qimg).scaledToWidth(260, Qt.TransformationMode.FastTransformation))
+                qr_lbl.show()
+                totp_code.show()
+                totp_status.setText("Scan QR with Authenticator, then enter the 6-digit code to confirm.")
 
-        def confirm_totp():
-            totp_err.setText("")
-            ok_, res = totp_verify_and_enable(self._auth_user["id"], totp_code.text().strip())
-            if not ok_:
-                totp_err.setText(res or "Invalid code.")
-                return
-            bcodes = (res or {}).get("backup_codes") if isinstance(res, dict) else None
-            if bcodes:
-                QMessageBox.information(self, "Backup codes", "Save these 10 backup codes (shown once):\n\n" + "\n".join(bcodes))
-            refresh_totp_ui()
+            def confirm_totp():
+                totp_err.setText("")
+                ok_, res = totp_verify_and_enable(self._auth_user["id"], totp_code.text().strip())
+                if not ok_:
+                    totp_err.setText(res or "Invalid code.")
+                    return
+                bcodes = (res or {}).get("backup_codes") if isinstance(res, dict) else None
+                if bcodes:
+                    QMessageBox.information(self, "Backup codes", "Save these 10 backup codes (shown once):\n\n" + "\n".join(bcodes))
+                refresh_totp_ui()
 
-        totp_btn_row = QHBoxLayout()
-        setup_btn = mkbtn("Setup TOTP", "btn_s"); setup_btn.clicked.connect(setup_totp)
-        conf_btn = mkbtn("Confirm TOTP", "btn_g"); conf_btn.clicked.connect(confirm_totp)
-        totp_btn_row.addWidget(setup_btn); totp_btn_row.addWidget(conf_btn); totp_btn_row.addStretch()
-        mv.addLayout(totp_btn_row)
+            totp_btn_row = QHBoxLayout()
+            setup_btn = mkbtn("Setup TOTP", "btn_s"); setup_btn.clicked.connect(setup_totp)
+            conf_btn = mkbtn("Confirm TOTP", "btn_g"); conf_btn.clicked.connect(confirm_totp)
+            totp_btn_row.addWidget(setup_btn); totp_btn_row.addWidget(conf_btn); totp_btn_row.addStretch()
+            mv.addLayout(totp_btn_row)
 
-        # Security questions (L4)
-        secq_status = QLabel("")
-        secq_status.setStyleSheet(f"color:{TEXT2};font-size:11px;")
-        mv.addWidget(sepeq := QLabel(""));  # spacer
-        mv.addWidget(secq_status)
-        q1 = QComboBox(); q1.addItems(SECURITY_QUESTION_POOL)
-        q2 = QComboBox(); q2.addItems(SECURITY_QUESTION_POOL)
-        a1 = QLineEdit(); a1.setPlaceholderText("Answer 1")
-        a2 = QLineEdit(); a2.setPlaceholderText("Answer 2")
-        for wdg in (q1, q2, a1, a2):
-            wdg.setMinimumHeight(36)
-        secq_err = QLabel(""); secq_err.setStyleSheet(f"color:{RED};font-size:11px;"); secq_err.setWordWrap(True)
-        mv.addWidget(fw("Question 1", q1))
-        mv.addWidget(fw("Answer 1", a1))
-        mv.addWidget(fw("Question 2", q2))
-        mv.addWidget(fw("Answer 2", a2))
-        mv.addWidget(secq_err)
-        save_sq = mkbtn("Save security questions", "btn_s")
-        def save_questions():
-            secq_err.setText("")
-            ok_, err_ = secq_set(self._auth_user["id"], q1.currentText(), a1.text(), q2.currentText(), a2.text())
-            if ok_:
-                QMessageBox.information(self, "Saved", "Security questions saved.")
+            # Security questions (L4 only)
+            if cur_lvl >= 4:
+                secq_status = QLabel("")
+                secq_status.setStyleSheet(f"color:{TEXT2};font-size:11px;")
+                mv.addWidget(sepeq := QLabel(""))
+                mv.addWidget(secq_status)
+                q1 = QComboBox(); q1.addItems(SECURITY_QUESTION_POOL)
+                q2 = QComboBox(); q2.addItems(SECURITY_QUESTION_POOL)
+                a1 = QLineEdit(); a1.setPlaceholderText("Answer 1")
+                a2 = QLineEdit(); a2.setPlaceholderText("Answer 2")
+                for wdg in (q1, q2, a1, a2):
+                    wdg.setMinimumHeight(36)
+                secq_err = QLabel(""); secq_err.setStyleSheet(f"color:{RED};font-size:11px;"); secq_err.setWordWrap(True)
+                mv.addWidget(fw("Question 1", q1))
+                mv.addWidget(fw("Answer 1", a1))
+                mv.addWidget(fw("Question 2", q2))
+                mv.addWidget(fw("Answer 2", a2))
+                mv.addWidget(secq_err)
+                save_sq = mkbtn("Save security questions", "btn_s")
+                def save_questions():
+                    secq_err.setText("")
+                    ok_, err_ = secq_set(self._auth_user["id"], q1.currentText(), a1.text(), q2.currentText(), a2.text())
+                    if ok_:
+                        QMessageBox.information(self, "Saved", "Security questions saved.")
+                        refresh_secq_ui()
+                    else:
+                        secq_err.setText(err_ or "Failed.")
+                save_sq.clicked.connect(save_questions)
+                mv.addWidget(save_sq)
+
+                def refresh_secq_ui():
+                    configured = secq_is_configured(self._auth_user["id"])
+                    secq_status.setText("Security questions: ✓ Configured" if configured else "Security questions: Not configured (required for L4).")
                 refresh_secq_ui()
-            else:
-                secq_err.setText(err_ or "Failed.")
-        save_sq.clicked.connect(save_questions)
-        mv.addWidget(save_sq)
 
-        def refresh_secq_ui():
-            configured = secq_is_configured(self._auth_user["id"])
-            secq_status.setText("Security questions: ✓ Configured" if configured else "Security questions: Not configured (required for L4).")
-
-        refresh_totp_ui()
-        refresh_secq_ui()
-        vl.addWidget(mcard)
+            refresh_totp_ui()
+            vl.addWidget(mcard)
 
         vl.addStretch()
         scroll.setWidget(inner)
