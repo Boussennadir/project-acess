@@ -37,69 +37,69 @@ STATUS_CLR = {"Pending": ORANGE, "Active": GREEN, "Suspended": RED, "Inactive": 
 CAT_CLR    = {"STU": ORANGE, "FAC": GREEN, "STF": ORANGE, "EXT": PURPLE}
 
 QSS=f"""
-* {{ font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; color: {TEXT}; }}
+* {{ font-family: 'Segoe UI', 'Inter', 'Arial', sans-serif; font-size: 13px; color: {TEXT}; }}
 QMainWindow, QWidget {{ background: {BG}; }}
 QDialog {{ background: {BG2}; }}
 QScrollArea {{ border: none; background: transparent; }}
 
 #sidebar {{
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 #1a1a1a, stop:1 #0f0f0f);
-    border-right: 2px solid {ORANGE_DIM};
-    min-width: 230px; max-width: 230px;
+        stop:0 #1d1d1d, stop:1 #101010);
+    border-right: 1px solid {BORDER};
+    min-width: 245px; max-width: 245px;
 }}
 #logo {{
-    font-size: 16px; font-weight: 700; color: {ORANGE};
-    padding: 0 20px; letter-spacing: 1px;
+    font-size: 17px; font-weight: 700; color: {ORANGE};
+    padding: 0 20px; letter-spacing: 0.4px;
 }}
-#uni  {{ font-size: 11px; color: {TEXT2}; padding: 0 20px 16px 20px; letter-spacing: 2px; text-transform: uppercase; }}
+#uni  {{ font-size: 11px; color: {TEXT2}; padding: 0 20px 16px 20px; letter-spacing: 1px; text-transform: uppercase; }}
 #nav  {{
     background: transparent; color: {TEXT2}; border: none;
     border-left: 3px solid transparent;
-    border-radius: 0px; padding: 12px 20px;
+    border-radius: 8px; padding: 12px 16px;
     text-align: left; font-size: 13px; margin: 1px 0px;
 }}
 #nav:hover  {{ background: rgba(255,140,66,0.08); color: {ORANGE}; border-left: 3px solid {ORANGE_DIM}; }}
 #nav_on {{
-    background: rgba(255,140,66,0.12); color: {ORANGE};
+    background: rgba(255,140,66,0.14); color: {ORANGE};
     border: none; border-left: 3px solid {ORANGE};
-    border-radius: 0px; padding: 12px 20px;
+    border-radius: 8px; padding: 12px 16px;
     text-align: left; font-size: 13px; font-weight: 700; margin: 1px 0px;
 }}
 #ver {{ color: #404040; font-size: 11px; padding: 12px 0; letter-spacing: 1px; }}
 
 #card {{
-    background: {BG2};
-    border: 1px solid {BORDER};
+    background: #1b1b1b;
+    border: 1px solid #323232;
     border-top: 2px solid {ORANGE_DIM};
-    border-radius: 4px; padding: 20px;
+    border-radius: 12px; padding: 20px;
 }}
 #card_blue  {{
-    background: {BG2};
+    background: #1b1b1b;
     border: 1px solid {ORANGE_DIM};
     border-top: 2px solid {ORANGE};
-    border-radius: 4px; padding: 20px;
+    border-radius: 12px; padding: 20px;
 }}
 #card_green {{
-    background: {BG2};
+    background: #1b1b1b;
     border: 1px solid #558b4a;
     border-top: 2px solid {GREEN};
-    border-radius: 4px; padding: 20px;
+    border-radius: 12px; padding: 20px;
 }}
 
 QLineEdit, QComboBox, QDateEdit {{
-    background: {BG3};
+    background: #222222;
     border: 1px solid {BORDER};
-    border-bottom: 2px solid {BORDER};
-    border-radius: 3px;
-    padding: 7px 10px; color: {TEXT}; min-height: 22px;
-    font-family: 'Consolas', monospace;
+    border-bottom: 2px solid #4a4a4a;
+    border-radius: 8px;
+    padding: 8px 12px; color: {TEXT}; min-height: 24px;
 }}
 QLineEdit:focus, QComboBox:focus, QDateEdit:focus {{
+    border: 1px solid {ORANGE_DIM};
     border-bottom: 2px solid {ORANGE};
-    background: #2a2520;
+    background: #2a241f;
 }}
-QLineEdit[err="1"] {{ border-bottom: 2px solid {RED}; background: #2a1515; }}
+QLineEdit[err="1"] {{ border: 1px solid #7a2d26; border-bottom: 2px solid {RED}; background: #2a1515; }}
 QComboBox::drop-down {{ border: none; padding-right: 8px; }}
 QComboBox QAbstractItemView {{
     background: {BG3}; border: 1px solid {BORDER};
@@ -107,35 +107,35 @@ QComboBox QAbstractItemView {{
     outline: none;
 }}
 
-#h1   {{ font-size: 22px; font-weight: 700; color: {TEXT}; letter-spacing: 1px; }}
-#sub  {{ color: {TEXT2}; font-size: 12px; letter-spacing: 1px; }}
-#flbl {{ color: {ORANGE}; font-size: 11px; font-weight: 700; margin-bottom: 2px; letter-spacing: 1px; text-transform: uppercase; }}
+#h1   {{ font-size: 24px; font-weight: 700; color: {TEXT}; letter-spacing: 0.4px; }}
+#sub  {{ color: {TEXT2}; font-size: 12px; letter-spacing: 0.4px; }}
+#flbl {{ color: {ORANGE}; font-size: 11px; font-weight: 700; margin-bottom: 2px; letter-spacing: 0.8px; text-transform: uppercase; }}
 #err  {{ color: {RED}; font-size: 11px; }}
 
 #btn_p {{
-    background: transparent; color: {ORANGE};
-    border: 1px solid {ORANGE}; border-radius: 3px;
-    padding: 9px 22px; font-weight: 700; min-width: 110px;
-    letter-spacing: 1px;
+    background: rgba(255,140,66,0.08); color: {ORANGE};
+    border: 1px solid {ORANGE}; border-radius: 8px;
+    padding: 10px 22px; font-weight: 700; min-width: 110px;
+    letter-spacing: 0.4px;
 }}
 #btn_p:hover   {{ background: {ORANGE}; color: {BG}; }}
 #btn_p:disabled {{ border-color: {BORDER}; color: {TEXT2}; }}
 #btn_s {{
-    background: transparent; color: {TEXT2};
-    border: 1px solid {BORDER}; border-radius: 3px;
-    padding: 9px 22px; min-width: 90px;
+    background: #1f1f1f; color: {TEXT2};
+    border: 1px solid {BORDER}; border-radius: 8px;
+    padding: 10px 22px; min-width: 90px;
 }}
 #btn_s:hover {{ border-color: {TEXT2}; color: {TEXT}; }}
 #btn_g {{
-    background: transparent; color: {GREEN};
-    border: 1px solid {GREEN}; border-radius: 3px;
-    padding: 9px 22px; font-weight: 700;
+    background: rgba(102,187,106,0.08); color: {GREEN};
+    border: 1px solid {GREEN}; border-radius: 8px;
+    padding: 10px 22px; font-weight: 700;
 }}
 #btn_g:hover {{ background: {GREEN}; color: {BG}; }}
 
 QTableWidget {{
-    background: {BG2}; border: 1px solid {BORDER};
-    border-radius: 4px; gridline-color: {BORDER};
+    background: #191919; border: 1px solid {BORDER};
+    border-radius: 10px; gridline-color: {BORDER};
     color: {TEXT}; alternate-background-color: {BG3};
 }}
 QTableWidget::item         {{ padding: 9px 12px; border-bottom: 1px solid {BORDER}; }}
@@ -143,29 +143,29 @@ QTableWidget::item:selected {{ background: rgba(255,140,66,0.15); color: {ORANGE
 QHeaderView::section {{
     background: {BG}; color: {ORANGE}; font-size: 11px; font-weight: 700;
     padding: 10px 12px; border: none; border-bottom: 2px solid {ORANGE_DIM};
-    letter-spacing: 2px; text-transform: uppercase;
+    letter-spacing: 1px; text-transform: uppercase;
 }}
 
-QTabWidget::pane  {{ border: 1px solid {BORDER}; border-radius: 4px; background: {BG2}; top: -1px; }}
+QTabWidget::pane  {{ border: 1px solid {BORDER}; border-radius: 10px; background: {BG2}; top: -1px; }}
 QTabBar::tab      {{
     background: transparent; color: {TEXT2};
-    padding: 9px 22px; border-bottom: 2px solid transparent;
-    margin-right: 4px; border-radius: 0;
+    padding: 10px 18px; border-bottom: 2px solid transparent;
+    margin-right: 4px; border-radius: 8px 8px 0 0;
 }}
-QTabBar::tab:selected {{ color: {ORANGE}; border-bottom: 2px solid {ORANGE}; background: transparent; }}
-QTabBar::tab:hover    {{ color: {TEXT}; background: rgba(0,201,177,0.06); }}
+QTabBar::tab:selected {{ color: {ORANGE}; border-bottom: 2px solid {ORANGE}; background: rgba(255,140,66,0.08); }}
+QTabBar::tab:hover    {{ color: {TEXT}; background: rgba(255,140,66,0.06); }}
 
 QGroupBox {{
-    border: 1px solid {BORDER}; border-radius: 4px;
-    margin-top: 10px; padding-top: 6px;
+    border: 1px solid {BORDER}; border-radius: 10px;
+    margin-top: 10px; padding-top: 8px;
     color: {ORANGE}; font-size: 11px; font-weight: 700; letter-spacing: 1px;
 }}
 QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 5px; }}
 
 #sep {{ background: {BORDER}; max-height: 1px; margin: 6px 0; }}
 
-QScrollBar:vertical   {{ background: {BG}; width: 5px; border-radius: 3px; }}
-QScrollBar::handle:vertical {{ background: {ORANGE_DIM}; border-radius: 3px; min-height: 20px; }}
+QScrollBar:vertical   {{ background: {BG}; width: 8px; border-radius: 4px; }}
+QScrollBar::handle:vertical {{ background: {ORANGE_DIM}; border-radius: 4px; min-height: 24px; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 
 QMessageBox {{ background: {BG2}; }}

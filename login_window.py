@@ -717,9 +717,11 @@ class LoginWindow(QWidget):
 
 # ── Change Password Dialog ───────────────────────────────────
 class ChangePasswordDialog(QDialog):
-    def __init__(self, auth_user: dict, parent=None):
+    def __init__(self, auth_user: dict, parent=None, require_email_otp: bool = False):
         super().__init__(parent)
         self._user = auth_user
+        self._require_email_otp = bool(require_email_otp)
+        self._otp_verified = False
         self.setWindowTitle("Change Password")
         self.setMinimumWidth(440)
         self._build()
@@ -780,6 +782,35 @@ class ChangePasswordDialog(QDialog):
                              f"border:1px solid {BORDER};border-radius:4px;padding:8px 10px;")
         vl.addWidget(policy)
 
+        if self._require_email_otp:
+            vl.addSpacing(4)
+            otp_title = QLabel("Email Confirmation (required)")
+            otp_title.setStyleSheet(f"color:{ORANGE};font-size:12px;font-weight:700;")
+            vl.addWidget(otp_title)
+            otp_hint = QLabel("Request and enter the 8-digit code sent to your registered email.")
+            otp_hint.setStyleSheet(f"color:{TEXT2};font-size:11px;")
+            otp_hint.setWordWrap(True)
+            vl.addWidget(otp_hint)
+
+            otp_row = QHBoxLayout()
+            self._otp_in = QLineEdit()
+            self._otp_in.setPlaceholderText("Enter 8-digit email code")
+            self._otp_in.setMaxLength(8)
+            self._otp_in.setMinimumHeight(36)
+            otp_row.addWidget(self._otp_in, 1)
+
+            self._otp_send_btn = mkbtn("Resend code", "btn_s")
+            self._otp_send_btn.clicked.connect(self._request_email_code)
+            otp_row.addWidget(self._otp_send_btn)
+            vl.addLayout(otp_row)
+
+            self._otp_status = QLabel("Email code not verified yet.")
+            self._otp_status.setStyleSheet(f"font-size:11px;color:{TEXT2};")
+            self._otp_status.setWordWrap(True)
+            vl.addWidget(self._otp_status)
+            # Auto-send the OTP when the dialog opens.
+            QTimer.singleShot(0, self._request_email_code)
+
         self._err = errlbl(); self._err.setWordWrap(True)
         vl.addWidget(self._err)
 
@@ -789,6 +820,34 @@ class ChangePasswordDialog(QDialog):
         cancel = mkbtn("Cancel", "btn_s"); cancel.clicked.connect(self.reject)
         row.addWidget(ok_btn); row.addWidget(cancel); row.addStretch()
         vl.addLayout(row)
+
+    def _request_email_code(self):
+        ok, res = request_sms_otp(self._user["id"])
+        self._otp_verified = False
+        if ok:
+            self._otp_status.setStyleSheet(f"font-size:11px;color:{GREEN};")
+            self._otp_status.setText(f"Code sent to {res}.")
+        else:
+            self._otp_status.setStyleSheet(f"font-size:11px;color:{RED};")
+            self._otp_status.setText(res or "Failed to send code.")
+
+    def _verify_email_code(self):
+        code = (self._otp_in.text() or "").strip() if self._require_email_otp else ""
+        if not (code.isdigit() and len(code) == 8):
+            self._otp_verified = False
+            self._otp_status.setStyleSheet(f"font-size:11px;color:{RED};")
+            self._otp_status.setText("Enter a valid 8-digit email code.")
+            return False
+        ok, err = verify_sms_otp(self._user["id"], code)
+        if not ok:
+            self._otp_verified = False
+            self._otp_status.setStyleSheet(f"font-size:11px;color:{RED};")
+            self._otp_status.setText(err or "Invalid code.")
+            return False
+        self._otp_verified = True
+        self._otp_status.setStyleSheet(f"font-size:11px;color:{GREEN};")
+        self._otp_status.setText("✓ Email code verified.")
+        return True
 
     def _on_pw_change(self, text):
         self._strength_bar.update_strength(text)
@@ -819,6 +878,8 @@ class ChangePasswordDialog(QDialog):
             self._err.setText("New password and confirmation are required."); return
         if new_v != conf_v:
             self._err.setText("New passwords do not match."); return
+        if self._require_email_otp and not self._verify_email_code():
+            return
 
         ok_r, error = change_password(
             self._user["id"], old_v, new_v,
@@ -1303,7 +1364,7 @@ class UserProfileWindow(QWidget):
         if self._person:
             user_data["first_name"] = self._person.get("first_name", "")
             user_data["last_name"]  = self._person.get("last_name", "")
-        dlg = ChangePasswordDialog(user_data, self)
+        dlg = ChangePasswordDialog(user_data, self, require_email_otp=True)
         dlg.exec()
 
     def _tab_login_history(self):
